@@ -66,7 +66,7 @@ export const CompanyExperienceView: React.FC<CompanyExperienceViewProps> = ({
       });
 
       // 2. 0.45秒後に2行目のタイピング開始（全17文字を2.0秒で表示、1文字約117.6ms）
-      const charInterval = 2000 / fullText2.length;
+      const charInterval = 2500 / fullText2.length;
       let currentChars = 0;
       let timerId: NodeJS.Timeout;
 
@@ -371,7 +371,7 @@ export const CompanyExperienceView: React.FC<CompanyExperienceViewProps> = ({
             {/* メインコピー（1行目0.6sフェード、2行目0.45sから1文字ずつタイピング 全文2s） */}
             <h1 className="text-4xl sm:text-5xl lg:text-[54px] font-black text-slate-900 leading-tight tracking-tight min-h-[140px] sm:min-h-[160px] flex flex-col justify-center">
               <span
-                className={`transition-all duration-600 ease-out ${
+                className={`transition-all duration-1000 ease-out ${
                   line1Visible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-2'
                 }`}
               >
