@@ -577,9 +577,11 @@ export const StorageService = {
     this.resetDisplayDemoData();
   },
 
-  // 検証データ内訳カウント取得
+  // 検証データ内訳カウント取得（demo_seed は保護・除外）
   getVerificationDataCounts() {
-    const offers = this.getOffers().filter((o) => o.collectionMode === 'verification');
+    const offers = this.getOffers().filter(
+      (o) => o.dataOrigin !== 'demo_seed' && o.collectionMode === 'verification'
+    );
     const skillRequests = this.getSkillRequests().filter((r) => r.collectionMode === 'verification');
     const feedbacks = this.getFeedbacks().filter((f) => f.collectionMode === 'verification');
     const responses = this.getRequirementResponses().filter((r) => r.collectionMode === 'verification');
@@ -633,7 +635,7 @@ export const StorageService = {
     };
   },
 
-  // 【検証データを削除してイベント収集を開始】
+  // 【検証データを削除してイベント収集を開始】（demo_seed 初期オファーは完全永続保護）
   purgeVerificationDataAndStartEvent(): { success: boolean; error?: string } {
     if (typeof window === 'undefined') return { success: false, error: 'Window undefined' };
 
@@ -644,12 +646,24 @@ export const StorageService = {
       const preEventFeedbacks = this.getFeedbacks().filter((f) => f.collectionMode === 'event').length;
       const preEventResponses = this.getRequirementResponses().filter((r) => r.collectionMode === 'event').length;
 
-      // 2. verification のみを除外して保存
-      const remainingOffers = this.getOffers().filter((o) => o.collectionMode !== 'verification');
+      // 2. demo_seed を保護し、ユーザー追加の verification のみを除外して保存
+      const currentOffers = this.getOffers();
+      let remainingOffers = currentOffers.filter(
+        (o) => o.dataOrigin === 'demo_seed' || o.collectionMode !== 'verification'
+      );
+      // 万が一 INITIAL_OFFERS が含まれていなければ確実に復元
+      INITIAL_OFFERS.forEach((seed) => {
+        if (!remainingOffers.some((o) => o.id === seed.id)) {
+          remainingOffers.unshift(seed);
+        }
+      });
+
       const remainingRequests = this.getSkillRequests().filter((r) => r.collectionMode !== 'verification');
       const remainingFeedbacks = this.getFeedbacks().filter((f) => f.collectionMode !== 'verification');
       const remainingResponses = this.getRequirementResponses().filter((r) => r.collectionMode !== 'verification');
-      const remainingReqs = this.getCompanyRequirements().filter((r) => r.collectionMode !== 'verification');
+      const remainingReqs = this.getCompanyRequirements().filter(
+        (r) => INITIAL_COMPANY_REQUIREMENTS.some((init) => init.id === r.id) || r.collectionMode !== 'verification'
+      );
       const remainingPractices = this.getPracticeRecords().filter((p) => p.collectionMode !== 'verification');
 
       localStorage.setItem(V2_KEYS.OFFERS, JSON.stringify(remainingOffers));
@@ -688,17 +702,36 @@ export const StorageService = {
   },
 
   // イベント回収データの安全消去（CSV出力必須 ＋ 2段階確認）
+  // ※ collectionMode === 'event' のデータのみを正確に削除し、初期シードや検証データは保持
   clearEventData(): boolean {
     if (typeof window === 'undefined') return false;
     const isExported = localStorage.getItem(V2_KEYS.CSV_EXPORTED_FLAG);
     if (!isExported) {
       return false; // 安全保護のためCSV出力必須
     }
-    // 空配列を保存（キー削除による初期シード復活を防止）
-    localStorage.setItem(V2_KEYS.OFFERS, JSON.stringify([]));
-    localStorage.setItem(V2_KEYS.SKILL_REQUESTS, JSON.stringify([]));
-    localStorage.setItem(V2_KEYS.FEEDBACKS, JSON.stringify([]));
-    localStorage.setItem(V2_KEYS.REQ_RESPONSES, JSON.stringify([]));
+
+    // イベント本番データ (collectionMode === 'event') のみを除去
+    const currentOffers = this.getOffers();
+    let remainingOffers = currentOffers.filter((o) => o.collectionMode !== 'event');
+    INITIAL_OFFERS.forEach((seed) => {
+      if (!remainingOffers.some((o) => o.id === seed.id)) {
+        remainingOffers.unshift(seed);
+      }
+    });
+
+    const remainingRequests = this.getSkillRequests().filter((r) => r.collectionMode !== 'event');
+    const remainingFeedbacks = this.getFeedbacks().filter((f) => f.collectionMode !== 'event');
+    const remainingResponses = this.getRequirementResponses().filter((r) => r.collectionMode !== 'event');
+    const remainingReqs = this.getCompanyRequirements().filter((r) => r.collectionMode !== 'event');
+    const remainingPractices = this.getPracticeRecords().filter((p) => p.collectionMode !== 'event');
+
+    localStorage.setItem(V2_KEYS.OFFERS, JSON.stringify(remainingOffers));
+    localStorage.setItem(V2_KEYS.SKILL_REQUESTS, JSON.stringify(remainingRequests));
+    localStorage.setItem(V2_KEYS.FEEDBACKS, JSON.stringify(remainingFeedbacks));
+    localStorage.setItem(V2_KEYS.REQ_RESPONSES, JSON.stringify(remainingResponses));
+    localStorage.setItem(V2_KEYS.COMPANY_REQUIREMENTS, JSON.stringify(remainingReqs.length > 0 ? remainingReqs : INITIAL_COMPANY_REQUIREMENTS));
+    localStorage.setItem(V2_KEYS.PRACTICE_RECORDS, JSON.stringify(remainingPractices));
+
     localStorage.removeItem(V2_KEYS.CSV_EXPORTED_FLAG);
     return true;
   },

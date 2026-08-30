@@ -75,8 +75,8 @@ export const PhaseManagementModal: React.FC<PhaseManagementModalProps> = ({
     setTimeout(() => setToastMsg(null), 3000);
   };
 
-  // パスワード認証チェック（設定パスワード: password123ramp）
-  const verifyPassword = (): boolean => {
+  // 誤操作防止コードの確認（設定コード: password123ramp）
+  const verifySecurityCode = (): boolean => {
     const input = passwordInput.trim();
     if (input === 'password123ramp') {
       setPasswordError(false);
@@ -88,11 +88,11 @@ export const PhaseManagementModal: React.FC<PhaseManagementModalProps> = ({
 
   // 1. 検証データを消去して本番開始
   const handlePurgeAndStartEvent = () => {
-    if (!verifyPassword()) return;
+    if (!verifySecurityCode()) return;
     const res = StorageService.purgeVerificationDataAndStartEvent();
     if (res.success) {
       refreshData();
-      showToast('✅ パスワード認証成功：検証データを消去し、本番モードを開始しました！');
+      showToast('✅ コード確認完了：検証データを消去し、本番モードを開始しました！');
       onPhaseChange?.();
       setTimeout(() => onClose(), 1200);
     } else {
@@ -102,29 +102,29 @@ export const PhaseManagementModal: React.FC<PhaseManagementModalProps> = ({
 
   // 2. 検証データを残したまま本番開始
   const handleStartEventDirectly = () => {
-    if (!verifyPassword()) return;
+    if (!verifySecurityCode()) return;
     StorageService.startEventCollectionPhaseDirectly();
     refreshData();
-    showToast('✅ パスワード認証成功：イベント本番モードを開始しました');
+    showToast('✅ コード確認完了：イベント本番モードを開始しました');
     onPhaseChange?.();
     setTimeout(() => onClose(), 1200);
   };
 
   // 3. リハーサル検証モードに戻す
   const handleReturnToVerification = () => {
-    if (!verifyPassword()) return;
+    if (!verifySecurityCode()) return;
     StorageService.startVerificationCollectionPhase();
     refreshData();
-    showToast('🧪 パスワード認証成功：リハーサル検証モードへ切り替えました');
+    showToast('🧪 コード確認完了：リハーサル検証モードへ切り替えました');
     onPhaseChange?.();
     setTimeout(() => onClose(), 1200);
   };
 
-  // 4. CSVエクスポート（要管理者パスワード）
+  // 4. CSVエクスポート（要誤操作防止コード）
   const handleExportCsv = () => {
-    if (!verifyPassword()) return;
+    if (!verifySecurityCode()) return;
     StorageService.exportVerificationDataToCsv(true);
-    showToast('📥 パスワード認証成功：イベント本番データをCSV出力しました');
+    showToast('📥 コード確認完了：イベント本番データをCSV出力しました');
   };
 
   return (
@@ -234,14 +234,14 @@ export const PhaseManagementModal: React.FC<PhaseManagementModalProps> = ({
           </div>
         </div>
 
-        {/* 管理者パスワードロック入力フィールド */}
+        {/* 管理者用・誤操作防止コード入力フィールド */}
         <div className="bg-slate-50 border border-slate-300/80 rounded-2xl p-3.5 space-y-2">
           <div className="flex items-center justify-between">
             <label className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
               <Lock className="w-3.5 h-3.5 text-teal-600" />
-              <span>管理者パスワード（来場者・誤操作防止ロック）</span>
+              <span>誤操作防止コード（管理者・運営スタッフ用）</span>
             </label>
-            <span className="text-[10px] text-slate-500 font-medium">※運営管理者専用</span>
+            <span className="text-[10px] text-slate-500 font-medium">※展示中の誤操作・誤消去防止用</span>
           </div>
           <div className="flex items-center gap-2">
             <input
@@ -251,7 +251,7 @@ export const PhaseManagementModal: React.FC<PhaseManagementModalProps> = ({
                 setPasswordInput(e.target.value);
                 setPasswordError(false);
               }}
-              placeholder="管理者パスワードを入力してください"
+              placeholder="管理者用の誤操作防止コードを入力"
               className={`flex-1 px-3 py-2 border rounded-xl text-xs bg-white ${
                 passwordError
                   ? 'border-rose-500 bg-rose-50/50 text-rose-900 focus:ring-rose-200'
@@ -262,7 +262,7 @@ export const PhaseManagementModal: React.FC<PhaseManagementModalProps> = ({
           {passwordError && (
             <p className="text-[11px] text-rose-600 font-bold flex items-center gap-1">
               <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0" />
-              <span>パスワードが正しくありません。管理者用パスワードを入力してください。</span>
+              <span>コードが一致しません。管理者用コードを入力してください。</span>
             </p>
           )}
         </div>
@@ -284,7 +284,7 @@ export const PhaseManagementModal: React.FC<PhaseManagementModalProps> = ({
                   【推奨】リハーサル検証データを消去して本番を開始
                 </strong>
                 <p className="text-[11px] text-slate-500 mt-0.5 leading-relaxed">
-                  事前に入力した検証データ（{verificationCounts.total}件）を一括クリアし、クリーンな状態でイベント本番を開始します。
+                  事前に入力した検証データ（{verificationCounts.total}件）を一括クリアし、クリーンな状態でイベント本番を開始します（※デモ用初期オファーやモデルケースは保護されます）。
                 </p>
               </div>
 
@@ -305,7 +305,7 @@ export const PhaseManagementModal: React.FC<PhaseManagementModalProps> = ({
                 className="w-full py-2.5 px-4 bg-gradient-to-r from-teal-600 to-cyan-600 hover:from-teal-700 hover:to-cyan-700 disabled:bg-slate-300 disabled:from-slate-300 disabled:to-slate-300 text-white font-bold rounded-xl shadow-md transition text-xs flex items-center justify-center gap-2"
               >
                 <Trash2 className="w-4 h-4" />
-                <span>パスコード認証してイベント本番を開始</span>
+                <span>コード確認してイベント本番を開始</span>
               </button>
             </div>
 
@@ -335,7 +335,7 @@ export const PhaseManagementModal: React.FC<PhaseManagementModalProps> = ({
             <div className="bg-slate-50 border border-slate-200 rounded-2xl p-3.5 flex items-center justify-between gap-3">
               <div>
                 <strong className="text-xs font-bold text-slate-900 block">
-                  来場企業データのCSVエクスポート（要パスワード）
+                  来場企業データのCSVエクスポート（要コード）
                 </strong>
                 <span className="text-[11px] text-slate-500">
                   本番中に回収されたデータ（{eventCounts.total}件）をCSVダウンロード
@@ -356,7 +356,7 @@ export const PhaseManagementModal: React.FC<PhaseManagementModalProps> = ({
             <div className="bg-amber-50/60 border border-amber-200 rounded-2xl p-3.5 flex items-center justify-between gap-3">
               <div>
                 <strong className="text-xs font-bold text-amber-950 block">
-                  リハーサル検証モードに戻す（要パスコード）
+                  リハーサル検証モードに戻す（要コード）
                 </strong>
                 <span className="text-[11px] text-amber-800">
                   再度プレゼン練習や動作確認を行いたい場合にいつでも戻せます

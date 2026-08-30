@@ -127,13 +127,13 @@ export const WorkCycleChart: React.FC<WorkCycleChartProps> = ({ requirement, wor
               評価期間: <strong className="text-slate-900">{periodLabel}</strong>
             </span>
             <span className="bg-slate-100 border border-slate-200 px-2 py-0.5 rounded text-slate-700">
-              工程内回復:{' '}
+              作業・回復の時間配分:{' '}
               <strong className="text-slate-900">
                 {requirement.timeAllocationState === 'delegated' || requirement.timeAllocationState === 'negotiable'
-                  ? '許可（本人の裁量）'
+                  ? '時間配分を本人に任せられる'
                   : requirement.timeAllocationState === 'unknown'
                   ? '未確認（事前相談）'
-                  : '一斉休憩のみ'}
+                  : '固定休憩で調整'}
               </strong>
             </span>
             <span className="bg-teal-50 border border-teal-200 px-2 py-0.5 rounded text-teal-900">

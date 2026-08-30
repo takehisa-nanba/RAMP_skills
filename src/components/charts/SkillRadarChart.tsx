@@ -56,8 +56,8 @@ export const SkillRadarChart: React.FC<SkillRadarChartProps> = ({
     return {
       axisId: axis.id,
       subject: axis.name,
-      '本人と合意した到達点': milestone ? milestone.score : 0,
-      '本人自己評価': selfEval ? selfEval.score : 0,
+      '本人と合意した到達点': milestone ? milestone.score : null,
+      '本人自己評価': selfEval ? selfEval.score : null,
       [companyName]: companyTargetScores[axis.id] ?? 3,
       isUnrated: !milestone,
       fullMark: 5,
@@ -110,6 +110,10 @@ export const SkillRadarChart: React.FC<SkillRadarChartProps> = ({
                 fontSize: '12px',
                 boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
               }}
+              formatter={(value: any, name: string) => [
+                value === null || value === undefined ? '未観測（お試し実習等で確認予定）' : `Lv.${value}`,
+                name,
+              ]}
             />
             <Legend wrapperStyle={{ fontSize: '11px', paddingTop: '8px' }} />
 

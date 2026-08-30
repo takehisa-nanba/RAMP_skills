@@ -208,7 +208,7 @@ export const SupporterView: React.FC<SupporterViewProps> = ({
     setCsvPasswordInput('');
     setCsvPasswordError(false);
     onDataChange();
-    showToast('✅ パスワード認証成功：CSVファイルを出力しました！');
+    showToast('✅ コード確認完了：CSVファイルを出力しました！');
   };
 
   // 【検証データを削除してイベント収集を開始】
@@ -227,7 +227,7 @@ export const SupporterView: React.FC<SupporterViewProps> = ({
     setPurgePasswordInput('');
     setPurgePasswordError(false);
     onDataChange();
-    showToast('🎉 パスワード認証成功：検証データを消去し、イベント本番回収モードへ切り替えました！');
+    showToast('🎉 コード確認完了：検証データを消去し、イベント本番回収モードへ切り替えました！');
   };
 
   // イベント回収データの安全クリア（CSV出力必須＋2段階確認）
@@ -1139,11 +1139,11 @@ export const SupporterView: React.FC<SupporterViewProps> = ({
               ℹ️ 検証データは需要分析対象外のためCSV出力不要で消去できます。消去成功後にイベントモードへ自動移行します。
             </div>
 
-            {/* 管理者パスワード入力 */}
+            {/* 誤操作防止コード入力 */}
             <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 mb-3 space-y-1.5">
               <label className="text-xs font-bold text-slate-800 flex items-center justify-between">
-                <span>管理者パスワード（誤操作防止ロック）</span>
-                <span className="text-[10px] text-slate-500 font-medium">※運営管理者専用</span>
+                <span>誤操作防止コード（管理者・運営用）</span>
+                <span className="text-[10px] text-slate-500 font-medium">※展示中の誤消去防止用</span>
               </label>
               <input
                 type="password"
@@ -1152,7 +1152,7 @@ export const SupporterView: React.FC<SupporterViewProps> = ({
                   setPurgePasswordInput(e.target.value);
                   setPurgePasswordError(false);
                 }}
-                placeholder="管理者パスワードを入力"
+                placeholder="管理者用の誤操作防止コードを入力"
                 className={`w-full px-3 py-1.5 text-xs border rounded-lg bg-white ${
                   purgePasswordError
                     ? 'border-rose-500 bg-rose-50/50 text-rose-900'
@@ -1161,7 +1161,7 @@ export const SupporterView: React.FC<SupporterViewProps> = ({
               />
               {purgePasswordError && (
                 <p className="text-[11px] text-rose-600 font-bold">
-                  ⚠️ パスワードが正しくありません。
+                  ⚠️ コードが一致しません。
                 </p>
               )}
             </div>
@@ -1350,16 +1350,16 @@ export const SupporterView: React.FC<SupporterViewProps> = ({
           <div className="bg-white rounded-2xl max-w-sm w-full p-6 shadow-2xl border-2 border-slate-200 animate-fadeIn space-y-4">
             <div className="flex items-center gap-2 text-slate-900 font-bold text-base">
               <Lock className="w-5 h-5 text-teal-600" />
-              <span>CSVダウンロード認証</span>
+              <span>CSVダウンロード（誤操作防止コード確認）</span>
             </div>
             <p className="text-xs text-slate-600 font-normal leading-relaxed">
-              来場企業データおよび検証データのエクスポートには、管理者パスワードが必要です。
+              来場企業データおよび検証データのエクスポートには、管理者用の誤操作防止コードが必要です。
             </p>
 
             <div className="space-y-1.5">
               <label className="text-xs font-bold text-slate-800 flex justify-between">
-                <span>管理者パスワード</span>
-                <span className="text-[10px] text-slate-500 font-medium">※運営管理者専用</span>
+                <span>誤操作防止コード</span>
+                <span className="text-[10px] text-slate-500 font-medium">※運営スタッフ専用</span>
               </label>
               <input
                 type="password"
@@ -1371,7 +1371,7 @@ export const SupporterView: React.FC<SupporterViewProps> = ({
                 onKeyDown={(e) => {
                   if (e.key === 'Enter') handleConfirmCsvExport();
                 }}
-                placeholder="管理者パスワードを入力"
+                placeholder="管理者用の誤操作防止コードを入力"
                 className={`w-full px-3 py-2 text-xs border rounded-xl bg-white ${
                   csvPasswordError
                     ? 'border-rose-500 bg-rose-50/50 text-rose-900'
@@ -1381,7 +1381,7 @@ export const SupporterView: React.FC<SupporterViewProps> = ({
               />
               {csvPasswordError && (
                 <p className="text-[11px] text-rose-600 font-bold">
-                  ⚠️ パスワードが正しくありません。
+                  ⚠️ コードが一致しません。
                 </p>
               )}
             </div>
@@ -1405,7 +1405,7 @@ export const SupporterView: React.FC<SupporterViewProps> = ({
                 className="px-4 py-2 text-xs font-bold bg-slate-900 hover:bg-slate-800 disabled:bg-slate-300 text-white rounded-lg transition shadow flex items-center gap-1.5"
               >
                 <Download className="w-3.5 h-3.5" />
-                <span>認証してダウンロード</span>
+                <span>コード確認してダウンロード</span>
               </button>
             </div>
           </div>

@@ -64,7 +64,7 @@ export function analyzeConnection(
 
     if (isRecoveryExplicitlyAllowed) {
       matchingPoints.push(
-        `工程内回復（ワークサイクル）の合意: 御社が回復時間の工程内取得を認めているため、本人の【集中${wc.workDurationMinutes}分＋回復${wc.recoveryDurationMinutes}分】という持続可能な作業周期をそのまま業務工程として活かせます。`
+        `持続可能な作業周期（ワークサイクル）の合意: 御社が作業と回復の時間配分を本人に任せられる方針のため、本人の【集中${wc.workDurationMinutes}分＋回復${wc.recoveryDurationMinutes}分】という安定したリズムをそのまま業務工程として活かせます。`
       );
     } else if (requirement.timeAllocationState === 'unknown' || !requirement.configuredDetails) {
       missingInfo.push(
