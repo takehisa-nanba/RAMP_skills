@@ -702,7 +702,8 @@ export const StorageService = {
   },
 
   // イベント回収データの安全消去（CSV出力必須 ＋ 2段階確認）
-  // ※ collectionMode === 'event' のデータのみを正確に削除し、初期シードや検証データは保持
+  // ※ CSV出力対象の4種（オファー、業務リクエスト、アンケート、回答スナップショット）の event モードのみを消去
+  // ※ 企業要件 (COMPANY_REQUIREMENTS) と 実践観測記録 (PRACTICE_RECORDS) は削除対象にせず完全保護
   clearEventData(): boolean {
     if (typeof window === 'undefined') return false;
     const isExported = localStorage.getItem(V2_KEYS.CSV_EXPORTED_FLAG);
@@ -722,15 +723,12 @@ export const StorageService = {
     const remainingRequests = this.getSkillRequests().filter((r) => r.collectionMode !== 'event');
     const remainingFeedbacks = this.getFeedbacks().filter((f) => f.collectionMode !== 'event');
     const remainingResponses = this.getRequirementResponses().filter((r) => r.collectionMode !== 'event');
-    const remainingReqs = this.getCompanyRequirements().filter((r) => r.collectionMode !== 'event');
-    const remainingPractices = this.getPracticeRecords().filter((p) => p.collectionMode !== 'event');
 
+    // 4種のみを更新（企業要件と実践観測記録は触らない）
     localStorage.setItem(V2_KEYS.OFFERS, JSON.stringify(remainingOffers));
     localStorage.setItem(V2_KEYS.SKILL_REQUESTS, JSON.stringify(remainingRequests));
     localStorage.setItem(V2_KEYS.FEEDBACKS, JSON.stringify(remainingFeedbacks));
     localStorage.setItem(V2_KEYS.REQ_RESPONSES, JSON.stringify(remainingResponses));
-    localStorage.setItem(V2_KEYS.COMPANY_REQUIREMENTS, JSON.stringify(remainingReqs.length > 0 ? remainingReqs : INITIAL_COMPANY_REQUIREMENTS));
-    localStorage.setItem(V2_KEYS.PRACTICE_RECORDS, JSON.stringify(remainingPractices));
 
     localStorage.removeItem(V2_KEYS.CSV_EXPORTED_FLAG);
     return true;

@@ -424,8 +424,8 @@ export const CompanyExperienceView: React.FC<CompanyExperienceViewProps> = ({
     activeTrainee
   );
 
-  // 安定ID (taskDefinitionId / requirementId) および 成果単位・数量に基づく厳密な照合
-  // ※ カテゴリ一致だけの matches[0] フォールバックは行わない
+  // 安定ID (taskDefinitionId / requirementId) および 成果単位・数量の【3点完全一致】に基づく厳密な照合
+  // ※ カテゴリ一致や、数量・単位の未設定補完による安易な一致（捏造）を完全排除
   const getRelevantWorkCycle = (
     t: TraineeProfile,
     req: CompanyWorkRequirement
@@ -435,28 +435,41 @@ export const CompanyExperienceView: React.FC<CompanyExperienceViewProps> = ({
       return previewSimulatedEvidence;
     }
 
-    // 1. 生ログからの動的集計を優先
+    // 業務側の単位・数量の確定チェック（どちらかが欠けている場合は直接比較不可）
+    const reqUnit = req.outputUnitOnly || req.workUnit;
+    const reqQty = req.outputQuantity;
+    if (!reqUnit || typeof reqQty !== 'number' || reqQty <= 0) {
+      return undefined;
+    }
+
+    // 1. 生ログからの動的集計を優先（ID、成果単位、成果数量の完全一致）
     const liveEvidence = StorageService.calculateWorkCycleEvidence(t.id, {
       taskDefinitionId: req.taskDefinitionId,
       requirementId: req.id,
-      outputUnit: req.outputUnitOnly || req.workUnit,
-      outputQuantity: req.outputQuantity || 1,
+      outputUnit: reqUnit,
+      outputQuantity: reqQty,
     });
     if (liveEvidence) return liveEvidence;
 
     // 2. プリセット/シード業務の厳密照合
+    // 【ID一致】AND【成果単位一致】AND【成果数量一致】の全部が確認できた場合のみ直接比較
     const directMatch = t.workCycles.find((wc) => {
-      if (req.taskDefinitionId && wc.taskDefinitionId) {
-        const isUnitMatch =
-          (req.outputUnitOnly && wc.outputUnit && req.outputUnitOnly === wc.outputUnit) ||
-          req.workUnit === wc.workUnit;
-        const isQtyMatch = !req.outputQuantity || !wc.outputQuantity || req.outputQuantity === wc.outputQuantity;
-        return req.taskDefinitionId === wc.taskDefinitionId && isUnitMatch && isQtyMatch;
+      // 1. ID一致判定（taskDefinitionId または requirementId）
+      const isIdMatch =
+        (req.taskDefinitionId && wc.taskDefinitionId && req.taskDefinitionId === wc.taskDefinitionId) ||
+        (req.id && wc.requirementId && req.id === wc.requirementId);
+      if (!isIdMatch) return false;
+
+      // 2. 成果単位の一致判定（両方に設定があり、完全一致すること）
+      const wcUnit = wc.outputUnit || wc.workUnit;
+      if (!wcUnit || reqUnit !== wcUnit) return false;
+
+      // 3. 成果数量の一致判定（両方に明確な数値があり、完全一致すること）
+      if (typeof wc.outputQuantity !== 'number' || wc.outputQuantity <= 0 || reqQty !== wc.outputQuantity) {
+        return false;
       }
-      if (req.id && wc.requirementId) {
-        return req.id === wc.requirementId;
-      }
-      return false;
+
+      return true;
     });
 
     return directMatch;
