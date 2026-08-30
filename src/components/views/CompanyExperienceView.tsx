@@ -47,43 +47,56 @@ export const CompanyExperienceView: React.FC<CompanyExperienceViewProps> = ({
   // ステップ管理 (0: 開始, 1: 業務選択, 2: 人財選択, 3: 中核比較, 4: 詳細確認・対話アクション)
   const [step, setStep] = useState<0 | 1 | 2 | 3 | 4>(0);
 
-  // タイプライターアニメーション用ステート
+  // メインコピー用ステート (1行目0.6sフェード、2行目0.45s開始・全文2sタイプライター)
   const fullText1 = '人を仕事に合わせるのではなく、';
-  const fullText2 = '人と仕事がつながる条件を探す。';
-  const [typedChars, setTypedChars] = useState(0);
+  const fullText2 = '人と仕事がつながる条件で探す。';
+  const [line1Visible, setLine1Visible] = useState(false);
+  const [typedChars2, setTypedChars2] = useState(0);
   const [isTypingDone, setIsTypingDone] = useState(false);
-  const totalLength = fullText1.length + fullText2.length;
 
   useEffect(() => {
     if (step === 0) {
-      setTypedChars(0);
+      setLine1Visible(false);
+      setTypedChars2(0);
       setIsTypingDone(false);
 
-      let current = 0;
+      // 1. 1行目の0.6sフェードイン
+      const frameId = requestAnimationFrame(() => {
+        setLine1Visible(true);
+      });
+
+      // 2. 0.45秒後に2行目のタイピング開始（全17文字を2.0秒で表示、1文字約117.6ms）
+      const charInterval = 2000 / fullText2.length;
+      let currentChars = 0;
       let timerId: NodeJS.Timeout;
 
-      const typeNext = () => {
-        current += 1;
-        setTypedChars(current);
+      const startTimer = setTimeout(() => {
+        const typeNext = () => {
+          currentChars += 1;
+          setTypedChars2(currentChars);
 
-        if (current >= totalLength) {
-          setIsTypingDone(true);
-          return;
-        }
+          if (currentChars >= fullText2.length) {
+            setIsTypingDone(true);
+            return;
+          }
 
-        // 1行目（fullText1.length）直後は 300ms の行間ポーズ、通常文字は 120ms
-        const delay = current === fullText1.length ? 300 : 120;
-        timerId = setTimeout(typeNext, delay);
+          timerId = setTimeout(typeNext, charInterval);
+        };
+
+        typeNext();
+      }, 450);
+
+      return () => {
+        cancelAnimationFrame(frameId);
+        clearTimeout(startTimer);
+        clearTimeout(timerId);
       };
-
-      timerId = setTimeout(typeNext, 120);
-
-      return () => clearTimeout(timerId);
     }
-  }, [step, totalLength, fullText1.length]);
+  }, [step, fullText2.length]);
 
   const handleSkipTyping = () => {
-    setTypedChars(totalLength);
+    setLine1Visible(true);
+    setTypedChars2(fullText2.length);
     setIsTypingDone(true);
   };
 
@@ -275,10 +288,6 @@ export const CompanyExperienceView: React.FC<CompanyExperienceViewProps> = ({
     onDataChange();
   };
 
-  // タイプライター表示文字列の計算
-  const line1Typed = fullText1.slice(0, Math.min(typedChars, fullText1.length));
-  const line2Typed = typedChars > fullText1.length ? fullText2.slice(0, typedChars - fullText1.length) : '';
-
   return (
     <div className="max-w-6xl mx-auto px-4 py-2 min-h-[calc(100vh-3rem)] flex flex-col justify-between">
       <div>
@@ -359,28 +368,27 @@ export const CompanyExperienceView: React.FC<CompanyExperienceViewProps> = ({
               体験型デモ
             </div>
 
-            {/* タイプライター風メインコピー（文字サイズ: 40〜54px） */}
+            {/* メインコピー（1行目0.6sフェード、2行目0.45sから1文字ずつタイピング 全文2s） */}
             <h1 className="text-4xl sm:text-5xl lg:text-[54px] font-black text-slate-900 leading-tight tracking-tight min-h-[140px] sm:min-h-[160px] flex flex-col justify-center">
-              <span>
-                {line1Typed}
-                {typedChars <= fullText1.length && (
+              <span
+                className={`transition-all duration-600 ease-out ${
+                  line1Visible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-2'
+                }`}
+              >
+                {fullText1}
+              </span>
+              <span className="text-purple-700 min-h-[1.3em]">
+                {fullText2.slice(0, typedChars2)}
+                {!isTypingDone && typedChars2 > 0 && (
                   <span className="inline-block w-1.5 h-10 sm:h-12 bg-purple-700 animate-pulse ml-1 align-middle"></span>
                 )}
               </span>
-              {typedChars > fullText1.length && (
-                <span className="text-purple-700">
-                  {line2Typed}
-                  {typedChars < totalLength && (
-                    <span className="inline-block w-1.5 h-10 sm:h-12 bg-purple-700 animate-pulse ml-1 align-middle"></span>
-                  )}
-                </span>
-              )}
             </h1>
 
-            {/* 説明文＆ボタン（タイピング進行に応じてフェードイン） */}
+            {/* 説明文＆ボタン（2行目のタイピング完了後にフェードイン） */}
             <div
               className={`space-y-8 transition-opacity duration-700 ${
-                isTypingDone || typedChars > fullText1.length + 5 ? 'opacity-100' : 'opacity-0'
+                isTypingDone ? 'opacity-100' : 'opacity-0 pointer-events-none'
               }`}
             >
               <p className="text-xl sm:text-2xl text-slate-600 font-medium leading-relaxed max-w-3xl mx-auto">
