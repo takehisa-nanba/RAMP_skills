@@ -16,6 +16,7 @@ export default function Home() {
   const [offers, setOffers] = useState<Offer[]>([]);
   const [skillRequests, setSkillRequests] = useState<SkillRequest[]>([]);
   const [feedbacks, setFeedbacks] = useState<FeedbackSurvey[]>([]);
+  const [experienceKey, setExperienceKey] = useState(0);
   const [isLoaded, setIsLoaded] = useState(false);
 
   // データ初期ロード＆同期関数
@@ -41,6 +42,7 @@ export default function Home() {
   const handleResetDisplay = () => {
     StorageService.resetDisplayDemoData();
     loadData();
+    setExperienceKey((k) => k + 1);
   };
 
   if (!isLoaded) {
@@ -85,11 +87,13 @@ export default function Home() {
 
           {currentRole === 'company' && (
             <CompanyExperienceView
+              key={experienceKey}
               trainees={trainees}
               requirements={requirements}
               selectedRequirementId={selectedReqId}
               onSelectRequirement={handleSelectRequirement}
               onDataChange={loadData}
+              onReturnToStart={() => setExperienceKey((k) => k + 1)}
             />
           )}
         </main>

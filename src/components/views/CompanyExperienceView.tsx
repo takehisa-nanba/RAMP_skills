@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   TraineeProfile,
   CompanyWorkRequirement,
@@ -23,6 +23,8 @@ import {
   ArrowRight,
   ArrowLeft,
   Award,
+  Sparkles,
+  RotateCcw,
 } from 'lucide-react';
 
 interface CompanyExperienceViewProps {
@@ -31,6 +33,7 @@ interface CompanyExperienceViewProps {
   selectedRequirementId: string;
   onSelectRequirement: (id: string) => void;
   onDataChange: () => void;
+  onReturnToStart?: () => void;
 }
 
 export const CompanyExperienceView: React.FC<CompanyExperienceViewProps> = ({
@@ -39,9 +42,41 @@ export const CompanyExperienceView: React.FC<CompanyExperienceViewProps> = ({
   selectedRequirementId,
   onSelectRequirement,
   onDataChange,
+  onReturnToStart,
 }) => {
   // ステップ管理 (0: 開始, 1: 業務選択, 2: 人財選択, 3: 中核比較, 4: 詳細確認・対話アクション)
   const [step, setStep] = useState<0 | 1 | 2 | 3 | 4>(0);
+
+  // タイプライターアニメーション用ステート
+  const fullText1 = '人を仕事に合わせるのではなく、';
+  const fullText2 = '人と仕事がつながる条件を探す。';
+  const [typedChars, setTypedChars] = useState(0);
+  const [isTypingDone, setIsTypingDone] = useState(false);
+  const totalLength = fullText1.length + fullText2.length;
+
+  useEffect(() => {
+    if (step === 0) {
+      setTypedChars(0);
+      setIsTypingDone(false);
+      const timer = setInterval(() => {
+        setTypedChars((prev) => {
+          if (prev >= totalLength) {
+            clearInterval(timer);
+            setIsTypingDone(true);
+            return totalLength;
+          }
+          return prev + 1;
+        });
+      }, 40);
+
+      return () => clearInterval(timer);
+    }
+  }, [step, totalLength]);
+
+  const handleSkipTyping = () => {
+    setTypedChars(totalLength);
+    setIsTypingDone(true);
+  };
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -90,11 +125,26 @@ export const CompanyExperienceView: React.FC<CompanyExperienceViewProps> = ({
   const [newReqExpectedMinutes, setNewReqExpectedMinutes] = useState(60);
   const [newReqUnit, setNewReqUnit] = useState('10件');
 
-  const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [toastInfo, setToastInfo] = useState<{ message: string; autoReturn?: boolean } | null>(null);
+  const returnTimerRef = useRef<NodeJS.Timeout | null>(null);
 
-  const showToast = (msg: string) => {
-    setToastMessage(msg);
-    setTimeout(() => setToastMessage(null), 4000);
+  const showToastWithAutoReturn = (msg: string) => {
+    if (returnTimerRef.current) clearTimeout(returnTimerRef.current);
+    setToastInfo({ message: msg, autoReturn: true });
+
+    // 3.5秒後に自動的に画面0へ戻り、次の企業様へ交代
+    returnTimerRef.current = setTimeout(() => {
+      setToastInfo(null);
+      setStep(0);
+      if (onReturnToStart) onReturnToStart();
+    }, 3500);
+  };
+
+  const handleImmediateReturn = () => {
+    if (returnTimerRef.current) clearTimeout(returnTimerRef.current);
+    setToastInfo(null);
+    setStep(0);
+    if (onReturnToStart) onReturnToStart();
   };
 
   const connectionAnalysis: ConnectionAnalysis = analyzeConnection(
@@ -110,6 +160,24 @@ export const CompanyExperienceView: React.FC<CompanyExperienceViewProps> = ({
         ? wc.taskName.includes('バナー') || wc.taskName.includes('Web') || wc.taskName.includes('画像')
         : wc.taskName.includes('マニュアル') || wc.taskName.includes('手順書') || wc.taskName.includes('メール')
     ) || activeTrainee.workCycles[0];
+
+  // 業務合致判定
+  const isMatchingTrainee = (t: TraineeProfile) => {
+    const rName = activeRequirement.taskName;
+    if (rName.includes('入力') || rName.includes('仕訳') || rName.includes('データ')) {
+      return t.id === 'trainee-a';
+    }
+    if (rName.includes('バナー') || rName.includes('Web') || rName.includes('画像')) {
+      return t.id === 'trainee-b';
+    }
+    if (rName.includes('マニュアル') || rName.includes('手順書') || rName.includes('IT')) {
+      return t.id === 'trainee-c';
+    }
+    if (rName.includes('メール') || rName.includes('校正') || rName.includes('文書')) {
+      return t.id === 'trainee-d';
+    }
+    return false;
+  };
 
   const handleSubmitOffer = (e: React.FormEvent) => {
     e.preventDefault();
@@ -128,7 +196,7 @@ export const CompanyExperienceView: React.FC<CompanyExperienceViewProps> = ({
 
     setShowOfferModal(false);
     onDataChange();
-    showToast('🎉 オファーを送信しました！（支援員ポータルに通知・保存されました）');
+    showToastWithAutoReturn('🎉 オファーを送信しました！次の企業様へ交代するため、メイン画面へ戻ります');
   };
 
   const handleSubmitSkillRequest = (e: React.FormEvent) => {
@@ -145,7 +213,7 @@ export const CompanyExperienceView: React.FC<CompanyExperienceViewProps> = ({
 
     setShowRequestModal(false);
     onDataChange();
-    showToast('💡 業務リクエストを投稿しました！（支援現場のカリキュラム検討に活用されます）');
+    showToastWithAutoReturn('💡 業務リクエストを投稿しました！次の企業様へ交代するため、メイン画面へ戻ります');
   };
 
   const handleSubmitFeedback = (e: React.FormEvent) => {
@@ -162,7 +230,7 @@ export const CompanyExperienceView: React.FC<CompanyExperienceViewProps> = ({
 
     setShowFeedbackModal(false);
     onDataChange();
-    showToast('📝 貴重なご感想をありがとうございました！');
+    showToastWithAutoReturn('📝 貴重なご感想をありがとうございました！次の企業様へ交代するため、メイン画面へ戻ります');
   };
 
   const handleAddNewRequirement = (e: React.FormEvent) => {
@@ -196,16 +264,29 @@ export const CompanyExperienceView: React.FC<CompanyExperienceViewProps> = ({
     onSelectRequirement(newReq.id);
     setShowNewReqModal(false);
     onDataChange();
-    showToast(`✅ 新しい業務「${newReq.taskName}」を登録しました！`);
   };
+
+  // タイプライター表示文字列の計算
+  const line1Typed = fullText1.slice(0, Math.min(typedChars, fullText1.length));
+  const line2Typed = typedChars > fullText1.length ? fullText2.slice(0, typedChars - fullText1.length) : '';
 
   return (
     <div className="max-w-6xl mx-auto px-4 py-2 min-h-[calc(100vh-3rem)] flex flex-col justify-between">
       <div>
-        {/* トースト */}
-        {toastMessage && (
-          <div className="mb-2 bg-indigo-600 text-white px-5 py-2.5 rounded-xl shadow-xl text-base font-bold animate-fadeIn flex items-center justify-between">
-            <span>{toastMessage}</span>
+        {/* トースト（自動復帰案内付き） */}
+        {toastInfo && (
+          <div className="mb-3 bg-purple-900 text-white px-5 py-3 rounded-2xl shadow-2xl text-base font-bold animate-fadeIn flex items-center justify-between border-2 border-purple-400">
+            <span className="flex items-center gap-2">
+              <span>{toastInfo.message}</span>
+            </span>
+            {toastInfo.autoReturn && (
+              <button
+                onClick={handleImmediateReturn}
+                className="ml-4 px-4 py-1.5 bg-white text-purple-950 rounded-xl text-sm font-black hover:bg-purple-100 transition whitespace-nowrap shadow"
+              >
+                今すぐメイン画面へ戻る ➔
+              </button>
+            )}
           </div>
         )}
 
@@ -257,38 +338,69 @@ export const CompanyExperienceView: React.FC<CompanyExperienceViewProps> = ({
         )}
 
         {/* ========================================================================= */}
-        {/* 画面0: デモ開始画面 (Start View) */}
+        {/* 画面0: デモ開始画面 (Start View) - max-w-5xl & タイプライター演出 */}
         {/* ========================================================================= */}
         {step === 0 && (
-          <div className="py-12 sm:py-24 text-center space-y-8 max-w-3xl mx-auto animate-fadeIn">
+          <div
+            onClick={handleSkipTyping}
+            className="py-10 sm:py-20 text-center space-y-8 max-w-5xl mx-auto animate-fadeIn cursor-pointer select-none"
+            title="クリックでアニメーションをスキップ"
+          >
             <div className="inline-block px-4 py-1.5 bg-purple-50 text-purple-700 border-2 border-purple-200 rounded-full text-sm font-black tracking-widest uppercase">
               体験型デモ
             </div>
-            <h1 className="text-4xl sm:text-5xl lg:text-[54px] font-black text-slate-900 leading-tight tracking-tight">
-              人を仕事に合わせるのではなく、
-              <br />
-              <span className="text-purple-700">人と仕事がつながる条件</span>を探す。
-            </h1>
-            <p className="text-xl sm:text-2xl text-slate-600 font-medium leading-relaxed">
-              御社が任せたい仕事を選ぶと、研修生本人が安定して力を発揮できる
-              <br className="hidden sm:inline" />
-              「持続可能な作業と回復の周期」と並べて比較できます。
-            </p>
 
-            <div className="pt-6 flex flex-col sm:flex-row items-center justify-center gap-4">
-              <button
-                onClick={() => setStep(1)}
-                className="w-full sm:w-auto px-10 py-5 bg-purple-700 hover:bg-purple-800 text-white font-black text-xl rounded-2xl shadow-xl hover:shadow-2xl transition flex items-center justify-center gap-3 group"
-              >
-                <span>御社の仕事を選んで試す</span>
-                <ArrowRight className="w-6 h-6 group-hover:translate-x-1 transition-transform" />
-              </button>
-              <button
-                onClick={() => setShowAboutModal(true)}
-                className="w-full sm:w-auto px-6 py-4 text-slate-700 hover:text-slate-900 font-bold text-lg transition"
-              >
-                このシステムについて
-              </button>
+            {/* タイプライター風メインコピー（文字サイズ: 40〜54px） */}
+            <h1 className="text-4xl sm:text-5xl lg:text-[54px] font-black text-slate-900 leading-tight tracking-tight min-h-[140px] sm:min-h-[160px] flex flex-col justify-center">
+              <span>
+                {line1Typed}
+                {typedChars <= fullText1.length && (
+                  <span className="inline-block w-1.5 h-10 sm:h-12 bg-purple-700 animate-pulse ml-1 align-middle"></span>
+                )}
+              </span>
+              {typedChars > fullText1.length && (
+                <span className="text-purple-700">
+                  {line2Typed}
+                  {typedChars < totalLength && (
+                    <span className="inline-block w-1.5 h-10 sm:h-12 bg-purple-700 animate-pulse ml-1 align-middle"></span>
+                  )}
+                </span>
+              )}
+            </h1>
+
+            {/* 説明文＆ボタン（タイピング進行に応じてフェードイン） */}
+            <div
+              className={`space-y-8 transition-opacity duration-700 ${
+                isTypingDone || typedChars > fullText1.length + 5 ? 'opacity-100' : 'opacity-0'
+              }`}
+            >
+              <p className="text-xl sm:text-2xl text-slate-600 font-medium leading-relaxed max-w-3xl mx-auto">
+                御社が任せたい仕事を選ぶと、研修生本人が安定して力を発揮できる
+                <br className="hidden sm:inline" />
+                「持続可能な作業と回復の周期」と並べて比較できます。
+              </p>
+
+              <div className="pt-2 flex flex-col sm:flex-row items-center justify-center gap-4">
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setStep(1);
+                  }}
+                  className="w-full sm:w-auto px-10 py-5 bg-purple-700 hover:bg-purple-800 text-white font-black text-xl rounded-2xl shadow-xl hover:shadow-2xl transition flex items-center justify-center gap-3 group"
+                >
+                  <span>御社の仕事を選んで試す</span>
+                  <ArrowRight className="w-6 h-6 group-hover:translate-x-1 transition-transform" />
+                </button>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setShowAboutModal(true);
+                  }}
+                  className="w-full sm:w-auto px-6 py-4 text-slate-700 hover:text-slate-900 font-bold text-lg transition"
+                >
+                  このシステムについて
+                </button>
+              </div>
             </div>
           </div>
         )}
@@ -345,6 +457,7 @@ export const CompanyExperienceView: React.FC<CompanyExperienceViewProps> = ({
               })}
             </div>
 
+            {/* 自社業務の追加ボタン */}
             <div className="text-right">
               <button
                 onClick={() => setShowNewReqModal(true)}
@@ -355,6 +468,7 @@ export const CompanyExperienceView: React.FC<CompanyExperienceViewProps> = ({
               </button>
             </div>
 
+            {/* 選択中要件の確認バー（戻るボタン ＆ 次へボタン配置） */}
             <div className="bg-slate-50 border-2 border-slate-200 rounded-2xl p-5 flex flex-wrap items-center justify-between gap-4">
               <div className="space-y-1">
                 <span className="text-sm font-black text-slate-500 uppercase tracking-wider">
@@ -372,9 +486,10 @@ export const CompanyExperienceView: React.FC<CompanyExperienceViewProps> = ({
               <div className="flex items-center gap-3">
                 <button
                   onClick={() => setStep(0)}
-                  className="px-5 py-3 text-slate-600 hover:bg-slate-200 rounded-xl font-bold text-base transition"
+                  className="px-6 py-4 bg-white hover:bg-slate-100 text-slate-700 rounded-xl font-bold text-lg border-2 border-slate-300 transition flex items-center gap-2"
                 >
-                  戻る
+                  <ArrowLeft className="w-5 h-5" />
+                  <span>デモ開始へ戻る</span>
                 </button>
                 <button
                   onClick={() => setStep(2)}
@@ -389,7 +504,7 @@ export const CompanyExperienceView: React.FC<CompanyExperienceViewProps> = ({
         )}
 
         {/* ========================================================================= */}
-        {/* 画面2: 研修生選択画面 (Trainee Selection View) */}
+        {/* 画面2: 研修生選択画面 (Trainee Selection View) - 業務合致ハイライト */}
         {/* ========================================================================= */}
         {step === 2 && (
           <div className="space-y-6 animate-fadeIn">
@@ -405,8 +520,10 @@ export const CompanyExperienceView: React.FC<CompanyExperienceViewProps> = ({
               </p>
             </div>
 
+            {/* 4名の大型カード（業務合致ハイライト付き） */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
               {trainees.map((t) => {
+                const isMatch = isMatchingTrainee(t);
                 const wc =
                   t.workCycles.find((c) =>
                     activeRequirement.taskName.includes('入力') || activeRequirement.taskName.includes('データ')
@@ -419,8 +536,20 @@ export const CompanyExperienceView: React.FC<CompanyExperienceViewProps> = ({
                 return (
                   <div
                     key={t.id}
-                    className="bg-white border-2 border-slate-200 hover:border-purple-400 rounded-2xl p-6 shadow-sm hover:shadow-md transition flex flex-col justify-between space-y-4"
+                    className={`bg-white border-2 rounded-2xl p-6 shadow-sm hover:shadow-md transition flex flex-col justify-between space-y-4 relative ${
+                      isMatch
+                        ? 'border-purple-500 ring-4 ring-purple-100 bg-gradient-to-b from-purple-50/40 to-white'
+                        : 'border-slate-200 hover:border-purple-300'
+                    }`}
                   >
+                    {/* 業務合致ハイライトバッジ */}
+                    {isMatch && (
+                      <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-purple-700 text-white rounded-full text-xs font-black self-start shadow-sm tracking-wide">
+                        <Sparkles className="w-3.5 h-3.5" />
+                        <span>選択中の業務（{activeRequirement.taskName}）の実績あり</span>
+                      </div>
+                    )}
+
                     <div className="space-y-3">
                       <div className="flex items-center gap-3.5">
                         <div
@@ -440,7 +569,13 @@ export const CompanyExperienceView: React.FC<CompanyExperienceViewProps> = ({
                       </div>
 
                       {wc && (
-                        <div className="text-base text-slate-800 bg-purple-50/60 border border-purple-200 p-3.5 rounded-xl space-y-1">
+                        <div
+                          className={`text-base p-3.5 rounded-xl space-y-1 ${
+                            isMatch
+                              ? 'bg-purple-100/70 border-2 border-purple-300 text-slate-900'
+                              : 'bg-slate-50 border border-slate-200 text-slate-800'
+                          }`}
+                        >
                           <span className="text-sm font-black text-purple-700 uppercase tracking-wide block">
                             関連する作業・回復実績:
                           </span>
@@ -459,7 +594,11 @@ export const CompanyExperienceView: React.FC<CompanyExperienceViewProps> = ({
                         setActiveTrainee(t);
                         setStep(3);
                       }}
-                      className="w-full py-4 bg-slate-900 hover:bg-purple-700 text-white rounded-xl font-black text-lg transition flex items-center justify-center gap-2 shadow"
+                      className={`w-full py-4 rounded-xl font-black text-lg transition flex items-center justify-center gap-2 shadow ${
+                        isMatch
+                          ? 'bg-purple-700 hover:bg-purple-800 text-white shadow-purple-200'
+                          : 'bg-slate-900 hover:bg-purple-700 text-white'
+                      }`}
                     >
                       <span>この人の働き方を見る</span>
                       <ArrowRight className="w-5 h-5" />
@@ -469,10 +608,11 @@ export const CompanyExperienceView: React.FC<CompanyExperienceViewProps> = ({
               })}
             </div>
 
-            <div className="pt-2">
+            {/* 画面下部の戻るボタン */}
+            <div className="pt-2 flex items-center justify-between">
               <button
                 onClick={() => setStep(1)}
-                className="inline-flex items-center gap-1.5 text-base text-slate-600 hover:text-slate-900 font-bold"
+                className="px-6 py-3.5 bg-white hover:bg-slate-100 text-slate-700 rounded-xl font-bold text-base border-2 border-slate-300 transition flex items-center gap-2 shadow-sm"
               >
                 <ArrowLeft className="w-4 h-4" />
                 <span>仕事を選び直す</span>
@@ -483,11 +623,10 @@ export const CompanyExperienceView: React.FC<CompanyExperienceViewProps> = ({
 
         {/* ========================================================================= */}
         {/* 画面3: 中核比較画面【体験の主役】 */}
-        {/* （1366×768でスクロールなし完全収容・巨大数値） */}
+        {/* （1366×768でスクロールなし完全収容・戻る/次へ並列配置） */}
         {/* ========================================================================= */}
         {step === 3 && (
           <div className="space-y-3 animate-fadeIn">
-
             {/* 1. 企業の期待と本人のワークサイクルのダイナミック比較（主役数値 48px〜54px） */}
             {relevantWorkCycle && (
               <WorkCycleChart
@@ -496,7 +635,7 @@ export const CompanyExperienceView: React.FC<CompanyExperienceViewProps> = ({
               />
             )}
 
-            {/* 2. 3つの接続条件の短い要約（見出し: 18px, 本文: 15px） */}
+            {/* 2. 3つの接続条件の短い要約 */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
               {/* 🟢 すでに重なる条件 */}
               <div className="bg-emerald-50 border-2 border-emerald-300 rounded-xl p-3 space-y-0.5 shadow-sm">
@@ -532,8 +671,16 @@ export const CompanyExperienceView: React.FC<CompanyExperienceViewProps> = ({
               </div>
             </div>
 
-            {/* 3. 主要ボタン（これ一つだけに絞る・20px特大ボタン） */}
-            <div className="pt-2 pb-1 flex justify-center">
+            {/* 3. 主要アクションエリア（戻るボタン ＆ 次へボタン並列配置） */}
+            <div className="pt-2 pb-1 flex flex-wrap items-center justify-center gap-4">
+              <button
+                onClick={() => setStep(2)}
+                className="px-6 py-3.5 bg-white hover:bg-slate-100 text-slate-700 font-bold text-base sm:text-lg rounded-2xl border-2 border-slate-300 transition flex items-center gap-2 shadow"
+              >
+                <ArrowLeft className="w-5 h-5" />
+                <span>人財を選び直す</span>
+              </button>
+
               <button
                 onClick={() => setStep(4)}
                 className="px-10 py-3.5 bg-purple-700 hover:bg-purple-800 text-white font-black text-lg sm:text-xl rounded-2xl shadow-xl hover:shadow-2xl transition flex items-center gap-3"
@@ -557,7 +704,7 @@ export const CompanyExperienceView: React.FC<CompanyExperienceViewProps> = ({
                 className="inline-flex items-center gap-1.5 text-base text-slate-600 hover:text-slate-900 font-bold"
               >
                 <ArrowLeft className="w-4 h-4" />
-                <span>比較画面に戻る</span>
+                <span>働き方の比較に戻る</span>
               </button>
               <div className="text-lg font-bold text-slate-700">
                 {activeTrainee.codeName} の詳細情報と対話アクション
@@ -663,6 +810,13 @@ export const CompanyExperienceView: React.FC<CompanyExperienceViewProps> = ({
 
               <div className="pt-6 border-t border-purple-200 flex flex-wrap items-center justify-center gap-6 text-base text-slate-600 font-bold">
                 <button
+                  onClick={() => setStep(3)}
+                  className="hover:text-purple-700 transition"
+                >
+                  ← 比較画面に戻る
+                </button>
+                <span>・</span>
+                <button
                   onClick={() => setStep(2)}
                   className="hover:text-purple-700 transition"
                 >
@@ -690,6 +844,20 @@ export const CompanyExperienceView: React.FC<CompanyExperienceViewProps> = ({
                 >
                   <HelpCircle className="w-4 h-4" />
                   <span>自社の求める業務をリクエストする</span>
+                </button>
+              </div>
+
+              {/* 次の企業様へ交代するリセットボタン */}
+              <div className="pt-6 mt-4 border-t border-slate-200">
+                <button
+                  onClick={() => {
+                    setStep(0);
+                    if (onReturnToStart) onReturnToStart();
+                  }}
+                  className="px-8 py-3.5 bg-white hover:bg-slate-100 text-slate-700 font-black text-base rounded-xl border-2 border-slate-300 transition inline-flex items-center gap-2 shadow-sm hover:shadow"
+                >
+                  <RotateCcw className="w-4 h-4 text-purple-700" />
+                  <span>最初から試す（次の企業様へ交代）</span>
                 </button>
               </div>
             </div>

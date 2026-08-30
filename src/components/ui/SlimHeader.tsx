@@ -1,4 +1,4 @@
-﻿import React, { useState } from 'react';
+import React, { useState } from 'react';
 import { DemoRole } from '../../types';
 import { Building2, Users, Shield, RotateCcw, Info, ChevronDown } from 'lucide-react';
 
@@ -29,8 +29,12 @@ export const SlimHeader: React.FC<SlimHeaderProps> = ({
   return (
     <header className="sticky top-0 z-40 bg-slate-900 border-b border-slate-800 text-white h-12 flex items-center px-4 shadow-sm select-none">
       <div className="max-w-6xl w-full mx-auto flex items-center justify-between">
-        {/* 左: ロゴ & タイトル */}
-        <div className="flex items-center gap-2.5">
+        {/* 左: ロゴ & タイトル (クリックでメイン画面に戻る) */}
+        <div
+          onClick={onResetDisplay}
+          className="flex items-center gap-2.5 cursor-pointer hover:opacity-90 transition"
+          title="クリックでメイン画面（初期表示）に戻る"
+        >
           <div className="w-7 h-7 rounded-lg bg-indigo-600 flex items-center justify-center font-black text-white text-sm shadow">
             R
           </div>
