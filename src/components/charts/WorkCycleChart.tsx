@@ -1,4 +1,4 @@
-﻿import React from 'react';
+import React from 'react';
 import { CompanyWorkRequirement, WorkCycleEvidence } from '../../types';
 
 interface WorkCycleChartProps {
@@ -18,8 +18,8 @@ export const WorkCycleChart: React.FC<WorkCycleChartProps> = ({ requirement, wor
   const toPercent = (val: number) => `${(val / maxScale) * 100}%`;
 
   return (
-    <div className="bg-slate-50 border border-slate-200 rounded-xl p-5 my-4">
-      <div className="flex items-center justify-between mb-3">
+    <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 my-2">
+      <div className="flex items-center justify-between mb-2">
         <div>
           <h4 className="text-base font-bold text-slate-800 flex items-center gap-2">
             <span>⏱️ 持続可能な作業周期（ワークサイクル）の比較</span>
