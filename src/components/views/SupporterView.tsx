@@ -14,10 +14,13 @@ import {
   AlertCircle,
   Sparkles,
   X,
+  Lock,
 } from 'lucide-react';
 
 interface SupporterViewProps {
   trainees: TraineeProfile[];
+  initialSelectedTraineeId?: string;
+  focusedRequirementId?: string;
   offers: Offer[];
   skillRequests: SkillRequest[];
   feedbacks: FeedbackSurvey[];
@@ -26,6 +29,8 @@ interface SupporterViewProps {
 
 export const SupporterView: React.FC<SupporterViewProps> = ({
   trainees,
+  initialSelectedTraineeId,
+  focusedRequirementId,
   offers,
   skillRequests,
   feedbacks,
@@ -53,9 +58,21 @@ export const SupporterView: React.FC<SupporterViewProps> = ({
   const [editingSelfScores, setEditingSelfScores] = useState<Record<string, number>>({});
   const [editingSummary, setEditingSummary] = useState('');
 
+  // 運用フェーズ管理
+  const currentPhase = StorageService.getCurrentCollectionPhase();
+  const verificationCounts = StorageService.getVerificationDataCounts();
+
   // モーダル管理
+  const [showPurgeModal, setShowPurgeModal] = useState(false);
+  const [purgeConfirmChecked, setPurgeConfirmChecked] = useState(false);
+  const [purgePasswordInput, setPurgePasswordInput] = useState('');
+  const [purgePasswordError, setPurgePasswordError] = useState(false);
   const [showClearConfirm, setShowClearConfirm] = useState(false);
   const [clearConfirmChecked, setClearConfirmChecked] = useState(false);
+  const [showCsvPasswordModal, setShowCsvPasswordModal] = useState(false);
+  const [csvExportTargetOnlyEvent, setCsvExportTargetOnlyEvent] = useState(true);
+  const [csvPasswordInput, setCsvPasswordInput] = useState('');
+  const [csvPasswordError, setCsvPasswordError] = useState(false);
   const [toastMsg, setToastMsg] = useState<string | null>(null);
 
   const showToast = (msg: string) => {
@@ -107,15 +124,16 @@ export const SupporterView: React.FC<SupporterViewProps> = ({
     e.preventDefault();
     if (!verifyingRecord) return;
 
-    StorageService.verifyPracticeRecordAndApplyToTrainee(
+    StorageService.confirmPracticeRecord(
       verifyingRecord.id,
+      '支援員: 佐藤',
       supporterNoteInput,
       stabilizingConditionsInput
     );
     setPracticeRecords(StorageService.getPracticeRecords());
     setVerifyingRecord(null);
     onDataChange();
-    showToast('✅ 支援員見立てをカルテに反映しました！（企業画面の比較タイムラインに連携されます）');
+    showToast('✅ 支援員確認メタを記録しました！（出所・確認状態が記録され、動的集計に反映されます）');
   };
 
   const handleSaveMilestone = () => {
@@ -173,14 +191,48 @@ export const SupporterView: React.FC<SupporterViewProps> = ({
     showToast('支援員見立て、月次合意到達点、および企業向けサマリーを更新・保存しました！');
   };
 
-  const handleExportCsv = () => {
-    StorageService.exportVerificationDataToCsv();
-    onDataChange();
-    showToast('需要検証データをCSV出力しました！（ダウンロードフォルダをご確認ください）');
+  const handleExportCsv = (onlyEvent: boolean = false) => {
+    setCsvExportTargetOnlyEvent(onlyEvent);
+    setCsvPasswordInput('');
+    setCsvPasswordError(false);
+    setShowCsvPasswordModal(true);
   };
 
-  const handleClearVerificationData = () => {
-    const success = StorageService.clearVerificationData();
+  const handleConfirmCsvExport = () => {
+    if (csvPasswordInput.trim() !== 'password123ramp') {
+      setCsvPasswordError(true);
+      return;
+    }
+    StorageService.exportVerificationDataToCsv(csvExportTargetOnlyEvent);
+    setShowCsvPasswordModal(false);
+    setCsvPasswordInput('');
+    setCsvPasswordError(false);
+    onDataChange();
+    showToast('✅ パスワード認証成功：CSVファイルを出力しました！');
+  };
+
+  // 【検証データを削除してイベント収集を開始】
+  const handlePurgeVerificationData = () => {
+    if (purgePasswordInput.trim() !== 'password123ramp') {
+      setPurgePasswordError(true);
+      return;
+    }
+    const res = StorageService.purgeVerificationDataAndStartEvent();
+    if (!res.success) {
+      alert(res.error || '検証データの消去に失敗しました。');
+      return;
+    }
+    setShowPurgeModal(false);
+    setPurgeConfirmChecked(false);
+    setPurgePasswordInput('');
+    setPurgePasswordError(false);
+    onDataChange();
+    showToast('🎉 パスワード認証成功：検証データを消去し、イベント本番回収モードへ切り替えました！');
+  };
+
+  // イベント回収データの安全クリア（CSV出力必須＋2段階確認）
+  const handleClearEventData = () => {
+    const success = StorageService.clearEventData();
     if (!success) {
       alert('安全保護のため、先に【CSVエクスポート】を実行してから削除してください。');
       return;
@@ -188,13 +240,20 @@ export const SupporterView: React.FC<SupporterViewProps> = ({
     setShowClearConfirm(false);
     setClearConfirmChecked(false);
     onDataChange();
-    showToast('需要検証データを安全にクリアしました。');
+    showToast('イベント回収データを安全にクリアしました。');
+  };
+
+  // 表示のみ初期化（データは保持）
+  const handleResetDisplay = () => {
+    StorageService.resetDisplayDemoData();
+    onDataChange();
+    showToast('選択中の業務等の表示状態を初期化しました（登録データは保持されています）。');
   };
 
   return (
     <div className="max-w-7xl mx-auto px-4 py-6 space-y-6">
       {/* デモ注記バナー */}
-      <div className="bg-emerald-50 border border-emerald-200 text-emerald-900 px-4 py-2.5 rounded-xl text-xs flex items-center justify-between">
+      <div className="bg-emerald-50 border border-emerald-200 text-emerald-900 px-4 py-2.5 rounded-xl text-xs flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-2">
           <span className="bg-emerald-600 text-white font-bold px-2 py-0.5 rounded text-[10px]">
             支援員視点
@@ -202,14 +261,107 @@ export const SupporterView: React.FC<SupporterViewProps> = ({
           <span className="font-semibold">
             担当支援員: 佐藤（RAMP就労移行支援事業所）
           </span>
+          {currentPhase.mode === 'event' ? (
+            <span className="bg-emerald-700 text-white text-[10px] font-black px-2 py-0.5 rounded-full border border-emerald-500 shadow-xs flex items-center gap-1">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-300 animate-pulse"></span>
+              🟢 イベント本番収集中
+            </span>
+          ) : (
+            <span className="bg-amber-100 text-amber-900 text-[10px] font-black px-2 py-0.5 rounded-full border border-amber-300 shadow-xs flex items-center gap-1">
+              🧪 事前検証・リハーサル中
+            </span>
+          )}
         </div>
-        <div className="text-slate-500">
+        <div className="text-slate-500 text-xs">
           研修生の作業周期の把握、月次面談到達点の合意、および企業の需要検証データ管理を行います。
         </div>
       </div>
 
+      {/* 企業視点とのケース連動バナー */}
+      {(() => {
+        const targetTrainee = trainees.find((t) => t.id === initialSelectedTraineeId);
+        const reqs = StorageService.getCompanyRequirements();
+        const targetReq = reqs.find((r) => r.id === focusedRequirementId);
+        if (!targetTrainee || !targetReq) return null;
+
+        const relatedRecord = practiceRecords.find(
+          (p) => p.traineeId === targetTrainee.id && (p.requirementId === targetReq.id || p.taskName === targetReq.taskName)
+        );
+
+        return (
+          <div className="bg-gradient-to-r from-teal-50/80 via-cyan-50/40 to-white border-2 border-teal-300 rounded-2xl p-4 shadow-sm flex flex-wrap items-center justify-between gap-3 animate-fadeIn">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-teal-700 text-white flex items-center justify-center font-black text-lg shadow-sm">
+                <Users className="w-5 h-5" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] font-black bg-teal-700 text-white px-2 py-0.5 rounded-full">
+                    企業が現在比較中のケース
+                  </span>
+                  <h3 className="font-black text-sm text-slate-900">
+                    {targetTrainee.codeName} × {targetReq.taskName} ({targetReq.workUnit})
+                  </h3>
+                </div>
+                <p className="text-xs text-slate-600 mt-0.5">
+                  {relatedRecord ? (
+                    (() => {
+                      const isConf =
+                        relatedRecord.verificationStatus === 'supporter_confirmed' ||
+                        relatedRecord.status === 'verified';
+                      return (
+                        <span>
+                          実践記録あり（作業{relatedRecord.workDurationMinutes}分＋回復{relatedRecord.recoveryDurationMinutes}分 / 状態:{' '}
+                          <strong className={isConf ? 'text-emerald-700' : 'text-indigo-700'}>
+                            {isConf ? '✓ 支援員確認・カルテ反映済み' : '見立て補足待ち'}
+                          </strong>）
+                        </span>
+                      );
+                    })()
+                  ) : (
+                    <span>この業務での実践記録はまだありません（研修生画面から入力、またはカルテに記録可能）。</span>
+                  )}
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2">
+              {relatedRecord ? (
+                (() => {
+                  const isConf =
+                    relatedRecord.verificationStatus === 'supporter_confirmed' ||
+                    relatedRecord.status === 'verified';
+                  return (
+                    <button
+                      type="button"
+                      onClick={() => handleOpenVerifyModal(relatedRecord)}
+                      className={`px-3.5 py-1.5 text-white font-black text-xs rounded-xl shadow transition flex items-center gap-1 ${
+                        isConf
+                          ? 'bg-slate-800 hover:bg-slate-900'
+                          : 'bg-teal-700 hover:bg-teal-800'
+                      }`}
+                    >
+                      <Sparkles className="w-3.5 h-3.5" />
+                      <span>{isConf ? '見立て内容を確認・編集' : '支援員見立て・再現条件を補足'}</span>
+                    </button>
+                  );
+                })()
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => handleOpenEdit(targetTrainee)}
+                  className="px-3.5 py-1.5 bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs rounded-xl shadow transition"
+                >
+                  <span>{targetTrainee.codeName}のカルテを開く</span>
+                </button>
+              )}
+            </div>
+          </div>
+        );
+      })()}
+
       {toastMsg && (
-        <div className="bg-emerald-600 text-white p-3 rounded-xl shadow-lg text-xs font-semibold animate-fadeIn">
+        <div className="bg-teal-700 text-white p-3 rounded-xl shadow-lg text-xs font-semibold animate-fadeIn">
           {toastMsg}
         </div>
       )}
@@ -227,7 +379,7 @@ export const SupporterView: React.FC<SupporterViewProps> = ({
           <Users className="w-4 h-4" />
           <span>担当研修生カルテ・到達点整理 ({trainees.length}名)</span>
           {offers.length > 0 && (
-            <span className="bg-purple-600 text-white text-[10px] px-2 py-0.5 rounded-full font-black">
+            <span className="bg-teal-600 text-white text-[10px] px-2 py-0.5 rounded-full font-black">
               📨 実習オファー {offers.length}件
             </span>
           )}
@@ -250,16 +402,16 @@ export const SupporterView: React.FC<SupporterViewProps> = ({
       {activeTab === 'trainees' && (
         <div className="space-y-6">
           {/* 📨 届いた実習オファー・面談打診 */}
-          <div className="bg-gradient-to-br from-purple-50/90 via-indigo-50/50 to-white border-2 border-purple-300 rounded-2xl p-5 shadow-sm space-y-4">
+          <div className="bg-gradient-to-br from-teal-50/90 via-cyan-50/40 to-white border-2 border-teal-300 rounded-2xl p-5 shadow-sm space-y-4">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div className="flex items-center gap-2.5">
-                <span className="p-2 rounded-xl bg-purple-700 text-white shadow-xs">
+                <span className="p-2 rounded-xl bg-teal-700 text-white shadow-xs">
                   <Mail className="w-5 h-5" />
                 </span>
                 <div>
                   <h3 className="font-black text-slate-900 text-base sm:text-lg flex items-center gap-2">
                     <span>📨 企業からの実習オファー・面談打診</span>
-                    <span className="text-xs font-black text-purple-800 bg-purple-100 border border-purple-200 px-2.5 py-0.5 rounded-full">
+                    <span className="text-xs font-black text-teal-900 bg-teal-100 border border-teal-200 px-2.5 py-0.5 rounded-full">
                       {offers.length}件届いています
                     </span>
                   </h3>
@@ -271,7 +423,7 @@ export const SupporterView: React.FC<SupporterViewProps> = ({
             </div>
 
             {offers.length === 0 ? (
-              <div className="text-center py-5 bg-white/70 rounded-xl border border-purple-200 text-xs text-slate-500 font-medium">
+              <div className="text-center py-5 bg-white/70 rounded-xl border border-teal-200 text-xs text-slate-500 font-medium">
                 現在届いているオファーはありません。企業画面の「お試し実習を相談する」から送信されるとここに即時届きます。
               </div>
             ) : (
@@ -279,7 +431,7 @@ export const SupporterView: React.FC<SupporterViewProps> = ({
                 {offers.map((o) => (
                   <div
                     key={o.id}
-                    className="p-4 rounded-xl border-2 border-purple-200 bg-white hover:border-purple-400 hover:shadow-sm transition flex flex-col justify-between gap-2.5"
+                    className="p-4 rounded-xl border-2 border-teal-200 bg-white hover:border-teal-400 hover:shadow-sm transition flex flex-col justify-between gap-2.5"
                   >
                     <div className="space-y-1.5">
                       <div className="flex items-center justify-between gap-2">
@@ -335,9 +487,27 @@ export const SupporterView: React.FC<SupporterViewProps> = ({
               <div>
                 <h3 className="font-black text-slate-900 text-base sm:text-lg flex items-center gap-2">
                   <span>📋 利用者からの模擬実践記録（支援員見立ての補足・カルテ反映）</span>
-                  <span className="text-xs font-bold text-indigo-700 bg-indigo-50 border border-indigo-200 px-2 py-0.5 rounded-full">
-                    {practiceRecords.length}件
-                  </span>
+                  {(() => {
+                    const unverifiedCount = practiceRecords.filter(
+                      (r) => r.verificationStatus !== 'supporter_confirmed' && r.status !== 'verified'
+                    ).length;
+                    return (
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-xs font-bold text-indigo-700 bg-indigo-50 border border-indigo-200 px-2 py-0.5 rounded-full">
+                          全 {practiceRecords.length}件
+                        </span>
+                        {unverifiedCount > 0 ? (
+                          <span className="text-xs font-black text-rose-700 bg-rose-100 border border-rose-200 px-2.5 py-0.5 rounded-full animate-pulse">
+                            見立て補足待ち {unverifiedCount}件
+                          </span>
+                        ) : (
+                          <span className="text-xs font-bold text-emerald-700 bg-emerald-100 border border-emerald-200 px-2.5 py-0.5 rounded-full">
+                            ✓ 全件カルテ反映済み
+                          </span>
+                        )}
+                      </div>
+                    );
+                  })()}
                 </h3>
                 <p className="text-xs text-slate-500 font-medium">
                   研修生が企業の募集業務を実際にやってみた記録です。支援員が客観的な見立て・安定再現条件を補足してカルテに反映すると、企業画面の比較タイムラインに連携されます。
@@ -353,7 +523,8 @@ export const SupporterView: React.FC<SupporterViewProps> = ({
               <div className="space-y-2.5">
                 {practiceRecords.map((rec) => {
                   const traineeObj = trainees.find((t) => t.id === rec.traineeId);
-                  const isVerified = rec.status === 'verified';
+                  const isVerified =
+                    rec.verificationStatus === 'supporter_confirmed' || rec.status === 'verified';
 
                   return (
                     <div
@@ -399,11 +570,21 @@ export const SupporterView: React.FC<SupporterViewProps> = ({
                       </div>
 
                       {isVerified ? (
-                        <div className="text-xs text-emerald-950 bg-emerald-50/80 p-2.5 rounded-lg border border-emerald-200">
-                          <strong>🧑‍💼 支援員の補足見立て:</strong> {rec.supporterNote}
-                          <div className="text-[11px] text-emerald-700 mt-0.5">
-                            再現条件: {rec.stabilizingConditions?.join(', ')}
+                        <div className="text-xs text-emerald-950 bg-emerald-50/80 p-2.5 rounded-lg border border-emerald-200 flex flex-wrap items-center justify-between gap-2">
+                          <div className="flex-1 min-w-0">
+                            <strong>🧑‍💼 支援員の補足見立て:</strong> {rec.supporterNote}
+                            <div className="text-[11px] text-emerald-700 mt-0.5">
+                              再現条件: {rec.stabilizingConditions?.join(', ')}
+                            </div>
                           </div>
+                          <button
+                            type="button"
+                            onClick={() => handleOpenVerifyModal(rec)}
+                            className="px-2.5 py-1 bg-white hover:bg-emerald-100 text-emerald-800 border border-emerald-300 font-bold text-[11px] rounded-md transition shadow-2xs flex items-center gap-1 flex-shrink-0"
+                          >
+                            <Edit className="w-3 h-3" />
+                            <span>見立てを再編集</span>
+                          </button>
                         </div>
                       ) : (
                         <div className="flex justify-end">
@@ -533,21 +714,53 @@ export const SupporterView: React.FC<SupporterViewProps> = ({
                 イベント中に来場企業が送信した「オファー」「業務リクエスト」「アンケート感想」を蓄積しています。
               </p>
             </div>
-            <div className="flex items-center gap-3">
+            <div className="flex flex-wrap items-center gap-2.5">
+              {currentPhase.mode === 'verification' ? (
+                <button
+                  onClick={() => setShowPurgeModal(true)}
+                  className="flex items-center gap-1.5 px-4 py-2.5 bg-rose-700 hover:bg-rose-800 text-white font-black rounded-xl shadow-md transition text-xs"
+                >
+                  <Trash2 className="w-4 h-4" />
+                  <span>🧪 検証データを削除してイベント収集を開始 ({verificationCounts.total}件)</span>
+                </button>
+              ) : (
+                <>
+                  <button
+                    onClick={() => handleExportCsv(true)}
+                    className="flex items-center gap-2 px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl shadow transition text-xs"
+                  >
+                    <Download className="w-4 h-4" />
+                    <span>イベント本番データをCSVエクスポート</span>
+                  </button>
+                  <button
+                    onClick={() => setShowClearConfirm(true)}
+                    className="flex items-center gap-1.5 px-3 py-2 text-rose-600 hover:bg-rose-50 border border-rose-200 rounded-xl text-xs transition font-bold"
+                    title="CSVエクスポート完了後のみクリア可能"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                    <span>イベントデータクリア</span>
+                  </button>
+                </>
+              )}
+
+              {/* 全件エクスポート（検証データ含むバックアップ用） */}
+              {currentPhase.mode === 'verification' && (
+                <button
+                  onClick={() => handleExportCsv(false)}
+                  className="flex items-center gap-1.5 px-3 py-2 text-slate-700 hover:bg-slate-100 border border-slate-300 rounded-xl text-xs font-bold transition"
+                >
+                  <Download className="w-4 h-4 text-slate-500" />
+                  <span>念のためCSVバックアップ</span>
+                </button>
+              )}
+
+              {/* 表示状態のみ初期化ボタン */}
               <button
-                onClick={handleExportCsv}
-                className="flex items-center gap-2 px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl shadow transition text-xs"
+                onClick={handleResetDisplay}
+                className="flex items-center gap-1.5 px-3 py-2 text-slate-600 hover:bg-slate-100 border border-slate-200 rounded-xl text-xs transition"
+                title="選択中の業務などの表示状態のみリセットします（データは保持されます）"
               >
-                <Download className="w-4 h-4" />
-                <span>需要検証データをCSVエクスポート</span>
-              </button>
-              <button
-                onClick={() => setShowClearConfirm(true)}
-                className="flex items-center gap-1.5 px-3 py-2 text-rose-600 hover:bg-rose-50 border border-rose-200 rounded-xl text-xs transition"
-                title="CSVエクスポート完了後のみクリア可能"
-              >
-                <Trash2 className="w-4 h-4" />
-                <span>データクリア</span>
+                <span>表示状態を初期化</span>
               </button>
             </div>
           </div>
@@ -863,11 +1076,125 @@ export const SupporterView: React.FC<SupporterViewProps> = ({
                 キャンセル
               </button>
               <button
-                onClick={handleClearVerificationData}
+                onClick={handleClearEventData}
                 disabled={!StorageService.isCsvExported() || !clearConfirmChecked}
                 className="px-5 py-2 text-xs font-black bg-rose-600 hover:bg-rose-700 disabled:bg-slate-300 text-white rounded-lg transition shadow"
               >
                 完全に削除する
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 【検証データを削除してイベント収集を開始】モーダル */}
+      {showPurgeModal && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border-2 border-slate-200 animate-fadeIn">
+            <div className="flex items-center gap-2 text-rose-600 font-black text-base mb-2">
+              <AlertCircle className="w-5 h-5" />
+              <span>検証データを消去してイベント本番を開始</span>
+            </div>
+            <p className="text-xs text-slate-600 mb-3 font-medium leading-relaxed">
+              事前リハーサル・動作確認で追加された検証データを一括削除し、イベント本番回収モードへ切り替えます。
+              （架空のモデルケース・デモシードは保護されます）
+            </p>
+
+            {/* 削除対象の内訳カウント表示 */}
+            <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs mb-3 space-y-1">
+              <div className="font-bold text-slate-700 pb-1 border-b border-slate-200">
+                削除対象データ（検証フェーズ入力分）:
+              </div>
+              <div className="flex justify-between text-slate-600">
+                <span>・オファー:</span>
+                <strong className="text-slate-900">{verificationCounts.offers}件</strong>
+              </div>
+              <div className="flex justify-between text-slate-600">
+                <span>・業務リクエスト:</span>
+                <strong className="text-slate-900">{verificationCounts.skillRequests}件</strong>
+              </div>
+              <div className="flex justify-between text-slate-600">
+                <span>・アンケート回答:</span>
+                <strong className="text-slate-900">{verificationCounts.feedbacks}件</strong>
+              </div>
+              <div className="flex justify-between text-slate-600">
+                <span>・企業要件回答スナップショット:</span>
+                <strong className="text-slate-900">{verificationCounts.responses}件</strong>
+              </div>
+              <div className="flex justify-between text-slate-600">
+                <span>・登録されたカスタム業務:</span>
+                <strong className="text-slate-900">{verificationCounts.customReqs}件</strong>
+              </div>
+              <div className="flex justify-between text-slate-600">
+                <span>・実践観測記録:</span>
+                <strong className="text-slate-900">{verificationCounts.practices}件</strong>
+              </div>
+              <div className="border-t border-slate-200 pt-1 flex justify-between font-black text-rose-700 text-sm">
+                <span>合計消去件数:</span>
+                <span>{verificationCounts.total}件</span>
+              </div>
+            </div>
+
+            <div className="bg-teal-50 border border-teal-200 text-teal-900 p-2.5 rounded-xl text-[11px] mb-3 font-semibold">
+              ℹ️ 検証データは需要分析対象外のためCSV出力不要で消去できます。消去成功後にイベントモードへ自動移行します。
+            </div>
+
+            {/* 管理者パスワード入力 */}
+            <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 mb-3 space-y-1.5">
+              <label className="text-xs font-bold text-slate-800 flex items-center justify-between">
+                <span>管理者パスワード（誤操作防止ロック）</span>
+                <span className="text-[10px] text-slate-500 font-medium">※運営管理者専用</span>
+              </label>
+              <input
+                type="password"
+                value={purgePasswordInput}
+                onChange={(e) => {
+                  setPurgePasswordInput(e.target.value);
+                  setPurgePasswordError(false);
+                }}
+                placeholder="管理者パスワードを入力"
+                className={`w-full px-3 py-1.5 text-xs border rounded-lg bg-white ${
+                  purgePasswordError
+                    ? 'border-rose-500 bg-rose-50/50 text-rose-900'
+                    : 'border-slate-300'
+                }`}
+              />
+              {purgePasswordError && (
+                <p className="text-[11px] text-rose-600 font-bold">
+                  ⚠️ パスワードが正しくありません。
+                </p>
+              )}
+            </div>
+
+            {/* 2段階確認チェックボックス */}
+            <label className="flex items-start gap-2 text-xs text-slate-800 cursor-pointer mb-4 font-bold bg-rose-50 p-2.5 rounded-xl border border-rose-200">
+              <input
+                type="checkbox"
+                checked={purgeConfirmChecked}
+                onChange={(e) => setPurgeConfirmChecked(e.target.checked)}
+                className="mt-0.5"
+              />
+              <span>事前検証データを消去し、イベント本番の収集を開始することに同意します</span>
+            </label>
+
+            <div className="flex justify-end gap-2.5 pt-2 border-t border-slate-100">
+              <button
+                onClick={() => {
+                  setShowPurgeModal(false);
+                  setPurgeConfirmChecked(false);
+                  setPurgePasswordInput('');
+                  setPurgePasswordError(false);
+                }}
+                className="px-4 py-2 text-xs font-bold text-slate-600 hover:bg-slate-100 rounded-lg"
+              >
+                キャンセル
+              </button>
+              <button
+                onClick={handlePurgeVerificationData}
+                disabled={!purgeConfirmChecked || !purgePasswordInput.trim()}
+                className="px-5 py-2 text-xs font-black bg-rose-700 hover:bg-rose-800 disabled:bg-slate-300 text-white rounded-lg transition shadow"
+              >
+                消去してイベント本番を開始
               </button>
             </div>
           </div>
@@ -882,7 +1209,7 @@ export const SupporterView: React.FC<SupporterViewProps> = ({
           <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl border-2 border-slate-200 text-sm space-y-4">
             <div className="flex justify-between items-center pb-3 border-b border-slate-200">
               <div>
-                <span className="text-[11px] font-bold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded border border-indigo-200">
+                <span className="text-[11px] font-bold text-teal-800 bg-teal-50 px-2 py-0.5 rounded border border-teal-200">
                   支援員の見立て・再現条件の補足
                 </span>
                 <h3 className="font-black text-lg text-slate-900 mt-0.5">
@@ -908,7 +1235,7 @@ export const SupporterView: React.FC<SupporterViewProps> = ({
                 </div>
                 <div className="flex justify-between">
                   <span className="text-slate-500">本人の作業・回復周期:</span>
-                  <span className="font-bold text-purple-700">
+                  <span className="font-bold text-teal-700">
                     集中{verifyingRecord.workDurationMinutes}分 ＋ 回復{verifyingRecord.recoveryDurationMinutes}分
                   </span>
                 </div>
@@ -937,7 +1264,7 @@ export const SupporterView: React.FC<SupporterViewProps> = ({
                       onClick={() => setSupporterNoteInput(preset)}
                       className={`w-full text-left p-2 rounded-lg border text-xs font-medium transition ${
                         supporterNoteInput === preset
-                          ? 'bg-indigo-50 border-indigo-600 text-indigo-900 font-bold'
+                          ? 'bg-teal-50 border-teal-600 text-teal-950 font-bold ring-1 ring-teal-200'
                           : 'border-slate-200 text-slate-700 hover:bg-slate-50'
                       }`}
                     >
@@ -982,9 +1309,9 @@ export const SupporterView: React.FC<SupporterViewProps> = ({
                             setStabilizingConditionsInput([...stabilizingConditionsInput, cond]);
                           }
                         }}
-                        className={`px-2.5 py-1 rounded-lg border text-xs font-semibold transition ${
+                        className={`px-2.5 py-1 rounded-lg border text-xs font-bold transition ${
                           isSelected
-                            ? 'bg-indigo-600 text-white border-indigo-600 font-bold'
+                            ? 'bg-teal-600 text-white border-teal-600 shadow-sm'
                             : 'border-slate-200 text-slate-700 hover:bg-slate-50'
                         }`}
                       >
@@ -1006,13 +1333,81 @@ export const SupporterView: React.FC<SupporterViewProps> = ({
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-black rounded-xl text-xs sm:text-sm shadow flex items-center gap-1.5"
+                  className="px-5 py-2 bg-gradient-to-r from-teal-600 to-cyan-600 hover:from-teal-700 hover:to-cyan-700 text-white font-black rounded-xl text-xs sm:text-sm shadow-md shadow-teal-500/20 flex items-center gap-1.5"
                 >
                   <CheckCircle className="w-4 h-4" />
                   <span>カルテに反映して企業画面と連携</span>
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* CSVエクスポート用パスワード認証モーダル */}
+      {showCsvPasswordModal && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-sm w-full p-6 shadow-2xl border-2 border-slate-200 animate-fadeIn space-y-4">
+            <div className="flex items-center gap-2 text-slate-900 font-bold text-base">
+              <Lock className="w-5 h-5 text-teal-600" />
+              <span>CSVダウンロード認証</span>
+            </div>
+            <p className="text-xs text-slate-600 font-normal leading-relaxed">
+              来場企業データおよび検証データのエクスポートには、管理者パスワードが必要です。
+            </p>
+
+            <div className="space-y-1.5">
+              <label className="text-xs font-bold text-slate-800 flex justify-between">
+                <span>管理者パスワード</span>
+                <span className="text-[10px] text-slate-500 font-medium">※運営管理者専用</span>
+              </label>
+              <input
+                type="password"
+                value={csvPasswordInput}
+                onChange={(e) => {
+                  setCsvPasswordInput(e.target.value);
+                  setCsvPasswordError(false);
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') handleConfirmCsvExport();
+                }}
+                placeholder="管理者パスワードを入力"
+                className={`w-full px-3 py-2 text-xs border rounded-xl bg-white ${
+                  csvPasswordError
+                    ? 'border-rose-500 bg-rose-50/50 text-rose-900'
+                    : 'border-slate-300 focus:border-teal-500'
+                }`}
+                autoFocus
+              />
+              {csvPasswordError && (
+                <p className="text-[11px] text-rose-600 font-bold">
+                  ⚠️ パスワードが正しくありません。
+                </p>
+              )}
+            </div>
+
+            <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowCsvPasswordModal(false);
+                  setCsvPasswordInput('');
+                  setCsvPasswordError(false);
+                }}
+                className="px-4 py-2 text-xs font-bold text-slate-600 hover:bg-slate-100 rounded-lg"
+              >
+                キャンセル
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmCsvExport}
+                disabled={!csvPasswordInput.trim()}
+                className="px-4 py-2 text-xs font-bold bg-slate-900 hover:bg-slate-800 disabled:bg-slate-300 text-white rounded-lg transition shadow flex items-center gap-1.5"
+              >
+                <Download className="w-3.5 h-3.5" />
+                <span>認証してダウンロード</span>
+              </button>
+            </div>
           </div>
         </div>
       )}

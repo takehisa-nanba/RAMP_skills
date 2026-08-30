@@ -7,10 +7,15 @@ import { Clock, CheckCircle2, Heart, Award, ArrowRight, Save, Briefcase, Sparkle
 
 interface TraineeViewProps {
   trainee: TraineeProfile;
+  focusedRequirementId?: string;
   onDataChange: () => void;
 }
 
-export const TraineeView: React.FC<TraineeViewProps> = ({ trainee, onDataChange }) => {
+export const TraineeView: React.FC<TraineeViewProps> = ({
+  trainee,
+  focusedRequirementId,
+  onDataChange,
+}) => {
   // 企業業務一覧と実践記録の取得
   const [companyRequirements, setCompanyRequirements] = useState<CompanyWorkRequirement[]>([]);
   const [practiceRecords, setPracticeRecords] = useState<TraineePracticeRecord[]>([]);
@@ -71,20 +76,29 @@ export const TraineeView: React.FC<TraineeViewProps> = ({ trainee, onDataChange 
     e.preventDefault();
     if (!selectedReqForPractice) return;
 
+    const qty = selectedReqForPractice.outputQuantity || 1;
+    const unit = selectedReqForPractice.outputUnitOnly || selectedReqForPractice.workUnit;
+
     const record: TraineePracticeRecord = {
       id: `practice-${Date.now()}`,
       traineeId: trainee.id,
       requirementId: selectedReqForPractice.id,
+      taskDefinitionId: selectedReqForPractice.taskDefinitionId,
       taskName: selectedReqForPractice.taskName,
-      taskCategory: selectedReqForPractice.taskCategory,
-      workUnit: selectedReqForPractice.workUnit,
+      taskCategory: selectedReqForPractice.taskCategory || 'general',
+      outputQuantity: qty,
+      outputUnit: unit,
       workDurationMinutes: practiceWorkMinutes,
       recoveryDurationMinutes: practiceRecoveryMinutes,
-      completedOutput: `${selectedReqForPractice.workUnit} 完了・セルフチェック完了`,
-      qualityResult: '正確性99.5%（ミス防止シート照合済み）',
+      qualityResult: null, // 自己申告生ログでは捏造せず未測定(null)
+      measurementMethod: null,
+      source: 'trainee_self_report',
+      verificationStatus: 'unverified',
+      dataOrigin: 'live_observation',
+      collectionMode: 'verification',
+      collectionPhaseId: '',
       traineeComment: practiceComment,
       traineeCoping: practiceCoping,
-      status: 'practiced',
       recordedAt: new Date().toISOString(),
     };
 
@@ -112,6 +126,49 @@ export const TraineeView: React.FC<TraineeViewProps> = ({ trainee, onDataChange 
           合意就労条件: {trainee.desiredWorkCondition.daysPerWeek} / {trainee.desiredWorkCondition.hoursPerDay}
         </div>
       </div>
+
+      {/* 企業視点とのケース連動バナー */}
+      {(() => {
+        const focusedReq = companyRequirements.find((r) => r.id === focusedRequirementId);
+        if (!focusedReq) return null;
+        return (
+          <div className="bg-gradient-to-r from-teal-50/80 via-cyan-50/40 to-white border-2 border-teal-300 rounded-2xl p-4 shadow-sm flex flex-wrap items-center justify-between gap-3 animate-fadeIn">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-teal-700 text-white flex items-center justify-center font-black text-lg shadow-sm">
+                <Briefcase className="w-5 h-5" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] font-black bg-teal-700 text-white px-2 py-0.5 rounded-full">
+                    企業が比較中の業務
+                  </span>
+                  <h3 className="font-black text-sm text-slate-900">
+                    {focusedReq.taskName}
+                  </h3>
+                </div>
+                <p className="text-xs text-slate-600 mt-0.5">
+                  成果単位: <strong>{focusedReq.workUnit}</strong> / 求める基準: {focusedReq.requiredQuality}
+                </p>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => {
+                setSelectedReqForPractice(focusedReq);
+                const baseMin = focusedReq.expectedDurationMinutes ?? 60;
+                setPracticeWorkMinutes(Math.min(30, Math.round(baseMin * 0.5)));
+                setPracticeRecoveryMinutes(10);
+              }}
+              className="px-4 py-2 bg-gradient-to-r from-teal-600 to-cyan-600 hover:from-teal-700 hover:to-cyan-700 text-white font-black text-xs rounded-xl shadow-md shadow-teal-500/20 transition flex items-center gap-1.5"
+            >
+              <Sparkles className="w-4 h-4" />
+              <span>この仕事の実践を記録する</span>
+              <ArrowRight className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        );
+      })()}
 
       {isSavedToast && (
         <div className="bg-emerald-600 text-white p-3 rounded-xl shadow-lg flex items-center justify-between text-xs animate-bounce">
@@ -282,7 +339,8 @@ export const TraineeView: React.FC<TraineeViewProps> = ({ trainee, onDataChange 
                     type="button"
                     onClick={() => {
                       setSelectedReqForPractice(req);
-                      setPracticeWorkMinutes(Math.min(30, Math.round(req.expectedDurationMinutes * 0.5)));
+                      const baseMin = req.expectedDurationMinutes ?? 60;
+                      setPracticeWorkMinutes(Math.min(30, Math.round(baseMin * 0.5)));
                       setPracticeRecoveryMinutes(10);
                     }}
                     className="px-3 py-1.5 bg-purple-700 hover:bg-purple-800 text-white font-bold text-xs rounded-lg transition shadow-xs flex items-center gap-1"
@@ -461,7 +519,7 @@ export const TraineeView: React.FC<TraineeViewProps> = ({ trainee, onDataChange 
           <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl border-2 border-slate-200 text-sm">
             <div className="flex justify-between items-center pb-3 border-b border-slate-200 mb-4">
               <div>
-                <span className="text-[11px] font-bold text-purple-700 bg-purple-50 px-2 py-0.5 rounded border border-purple-200">
+                <span className="text-[11px] font-bold text-teal-800 bg-teal-50 px-2 py-0.5 rounded border border-teal-200">
                   企業の模擬業務を実践
                 </span>
                 <h3 className="font-black text-lg text-slate-900 mt-0.5">
@@ -506,7 +564,7 @@ export const TraineeView: React.FC<TraineeViewProps> = ({ trainee, onDataChange 
                       onClick={() => setPracticeWorkMinutes(m)}
                       className={`px-3 py-1 rounded-lg border text-xs font-bold transition ${
                         practiceWorkMinutes === m
-                          ? 'bg-purple-700 text-white border-purple-700'
+                          ? 'bg-teal-600 text-white border-teal-600 shadow-sm'
                           : 'border-slate-200 text-slate-700 hover:bg-slate-100'
                       }`}
                     >
@@ -529,7 +587,7 @@ export const TraineeView: React.FC<TraineeViewProps> = ({ trainee, onDataChange 
                       onClick={() => setPracticeRecoveryMinutes(m)}
                       className={`px-3 py-1 rounded-lg border text-xs font-bold transition ${
                         practiceRecoveryMinutes === m
-                          ? 'bg-sky-600 text-white border-sky-600'
+                          ? 'bg-teal-600 text-white border-teal-600 shadow-sm'
                           : 'border-slate-200 text-slate-700 hover:bg-slate-100'
                       }`}
                     >
@@ -564,9 +622,9 @@ export const TraineeView: React.FC<TraineeViewProps> = ({ trainee, onDataChange 
                             setPracticeCoping([...practiceCoping, coping]);
                           }
                         }}
-                        className={`px-2.5 py-1 rounded-lg border text-xs font-semibold transition ${
+                        className={`px-2.5 py-1 rounded-lg border text-xs font-bold transition ${
                           isSelected
-                            ? 'bg-emerald-600 text-white border-emerald-600 font-bold'
+                            ? 'bg-teal-600 text-white border-teal-600 shadow-sm'
                             : 'border-slate-200 text-slate-700 hover:bg-slate-50'
                         }`}
                       >
@@ -595,7 +653,7 @@ export const TraineeView: React.FC<TraineeViewProps> = ({ trainee, onDataChange 
                       onClick={() => setPracticeComment(comm)}
                       className={`w-full text-left p-2 rounded-lg border text-xs font-medium transition ${
                         practiceComment === comm
-                          ? 'bg-purple-50 border-purple-600 text-purple-900 font-bold'
+                          ? 'bg-teal-50 border-teal-600 text-teal-950 font-bold ring-1 ring-teal-200'
                           : 'border-slate-200 text-slate-700 hover:bg-slate-50'
                       }`}
                     >
@@ -615,7 +673,7 @@ export const TraineeView: React.FC<TraineeViewProps> = ({ trainee, onDataChange 
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2 bg-purple-700 hover:bg-purple-800 text-white font-black rounded-xl text-xs sm:text-sm shadow flex items-center gap-1.5"
+                  className="px-5 py-2 bg-gradient-to-r from-teal-600 to-cyan-600 hover:from-teal-700 hover:to-cyan-700 text-white font-black rounded-xl text-xs sm:text-sm shadow-md shadow-teal-500/20 flex items-center gap-1.5"
                 >
                   <Save className="w-4 h-4" />
                   <span>実践記録を保存（支援員と共有）</span>

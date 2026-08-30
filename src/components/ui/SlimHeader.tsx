@@ -1,10 +1,13 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { DemoRole } from '../../types';
 import { Building2, Users, Shield, RotateCcw, Info } from 'lucide-react';
 import { AboutSystemModal } from '../modals/AboutSystemModal';
+import { PhaseManagementModal } from '../modals/PhaseManagementModal';
+import { StorageService } from '../../lib/storage';
 
 interface SlimHeaderProps {
   currentRole: DemoRole;
+  selectedTraineeCodeName?: string;
   onSelectRole: (role: DemoRole) => void;
   onResetDisplay: () => void;
   onReturnToStart?: () => void;
@@ -12,17 +15,30 @@ interface SlimHeaderProps {
 
 export const SlimHeader: React.FC<SlimHeaderProps> = ({
   currentRole,
+  selectedTraineeCodeName,
   onSelectRole,
   onResetDisplay,
   onReturnToStart,
 }) => {
   const [showMenu, setShowMenu] = useState(false);
   const [showAboutModal, setShowAboutModal] = useState(false);
+  const [showPhaseModal, setShowPhaseModal] = useState(false);
   const [showResetConfirm, setShowResetConfirm] = useState(false);
+  const [isEventMode, setIsEventMode] = useState(false);
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      setIsEventMode(StorageService.getCurrentCollectionPhase().mode === 'event');
+    }
+  }, [showPhaseModal]);
 
   const roleLabels: Record<DemoRole, { label: string; icon: any; color: string }> = {
-    company: { label: '企業視点', icon: Building2, color: 'text-purple-400 bg-purple-950/60 border-purple-800' },
-    trainee: { label: '研修生視点 (Aさん)', icon: Users, color: 'text-blue-400 bg-blue-950/60 border-blue-800' },
+    company: { label: '企業視点', icon: Building2, color: 'text-teal-400 bg-teal-950/60 border-teal-800' },
+    trainee: {
+      label: selectedTraineeCodeName ? `研修生 (${selectedTraineeCodeName})` : '研修生視点',
+      icon: Users,
+      color: 'text-sky-400 bg-sky-950/60 border-sky-800',
+    },
     supporter: { label: '支援員視点 (佐藤)', icon: Shield, color: 'text-emerald-400 bg-emerald-950/60 border-emerald-800' },
   };
 
@@ -38,20 +54,47 @@ export const SlimHeader: React.FC<SlimHeaderProps> = ({
     <header className="sticky top-0 z-40 bg-slate-900 border-b border-slate-800 text-white h-12 flex items-center px-4 shadow-sm select-none">
       <div className="max-w-6xl w-full mx-auto flex items-center justify-between">
         {/* 左: ロゴ & タイトル (クリックでデモ開始画面に戻るだけ・保存データ不変) */}
-        <div
-          onClick={handleLogoClick}
-          className="flex items-center gap-2.5 cursor-pointer hover:opacity-90 transition"
-          title="クリックでデモ開始画面（STEP 0）に戻る（保存データは保持されます）"
-        >
-          <div className="w-7 h-7 rounded-lg bg-indigo-600 flex items-center justify-center font-black text-white text-sm shadow">
-            R
+        <div className="flex items-center gap-3">
+          <div
+            onClick={handleLogoClick}
+            className="flex items-center gap-2.5 cursor-pointer hover:opacity-90 transition"
+            title="クリックでデモ開始画面（STEP 0）に戻る（保存データは保持されます）"
+          >
+            <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-teal-400 to-teal-600 flex items-center justify-center font-black text-white text-sm shadow-md">
+              R
+            </div>
+            <span className="font-bold text-sm text-slate-100 tracking-tight">
+              RAMP デジタルスキルダッシュボード
+            </span>
+            <span className="text-[10px] bg-slate-800 text-teal-400 font-bold px-1.5 py-0.5 rounded border border-teal-800/60">
+              DEMO
+            </span>
           </div>
-          <span className="font-bold text-sm text-slate-100 tracking-tight">
-            RAMP デジタルスキルダッシュボード
-          </span>
-          <span className="text-[10px] bg-slate-800 text-slate-400 font-bold px-1.5 py-0.5 rounded border border-slate-700">
-            DEMO
-          </span>
+
+          {/* 運用フェーズ切り替えボタン（リハーサル ⇔ 本番） */}
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              setShowPhaseModal(true);
+            }}
+            className={`inline-flex items-center gap-1.5 text-[11px] font-bold px-2.5 py-0.5 rounded-full border transition shadow-sm cursor-pointer ${
+              isEventMode
+                ? 'bg-teal-950/90 hover:bg-teal-900 text-teal-300 border-teal-500 hover:border-teal-400'
+                : 'bg-amber-950/90 hover:bg-amber-900 text-amber-300 border-amber-500 hover:border-amber-400'
+            }`}
+            title="クリックしてリハーサル／イベント本番の運用フェーズを切り替え・管理"
+          >
+            <span
+              className={`w-2 h-2 rounded-full ${
+                isEventMode ? 'bg-teal-400 animate-pulse' : 'bg-amber-400'
+              }`}
+            ></span>
+            <span>{isEventMode ? '🟢 本番収集中' : '🧪 リハーサル検証中'}</span>
+            <span className="text-[9px] bg-black/40 px-1 py-0.2 rounded border border-white/10 font-normal">
+              切替
+            </span>
+          </button>
         </div>
 
         {/* 右: 視点切替（3つ横並び） & デモメニュー */}
@@ -68,10 +111,10 @@ export const SlimHeader: React.FC<SlimHeaderProps> = ({
                   className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold transition ${
                     isActive
                       ? r === 'company'
-                        ? 'bg-purple-700 text-white shadow-sm'
+                        ? 'bg-teal-600 text-white shadow-sm font-black'
                         : r === 'trainee'
-                        ? 'bg-blue-600 text-white shadow-sm'
-                        : 'bg-emerald-600 text-white shadow-sm'
+                        ? 'bg-sky-600 text-white shadow-sm font-black'
+                        : 'bg-emerald-600 text-white shadow-sm font-black'
                       : 'text-slate-400 hover:text-slate-200 hover:bg-slate-700/40'
                   }`}
                 >
@@ -95,15 +138,25 @@ export const SlimHeader: React.FC<SlimHeaderProps> = ({
             </button>
 
             {showMenu && (
-              <div className="absolute right-0 mt-1.5 w-52 bg-slate-800 border border-slate-700 rounded-xl shadow-xl py-1.5 z-50 animate-fadeIn text-xs">
+              <div className="absolute right-0 mt-1.5 w-56 bg-slate-800 border border-slate-700 rounded-xl shadow-xl py-1.5 z-50 animate-fadeIn text-xs">
+                <button
+                  onClick={() => {
+                    setShowPhaseModal(true);
+                    setShowMenu(false);
+                  }}
+                  className="w-full text-left px-3 py-2 flex items-center gap-2 text-slate-300 hover:bg-slate-700 hover:text-white"
+                >
+                  <span className="text-sm">🔄</span>
+                  <span>運用フェーズ切替（リハーサル/本番）</span>
+                </button>
                 <button
                   onClick={() => {
                     setShowAboutModal(true);
                     setShowMenu(false);
                   }}
-                  className="w-full text-left px-3 py-2 flex items-center gap-2 text-slate-300 hover:bg-slate-700 hover:text-white"
+                  className="w-full text-left px-3 py-2 flex items-center gap-2 text-slate-300 hover:bg-slate-700 hover:text-white border-t border-slate-700/60"
                 >
-                  <Info className="w-3.5 h-3.5 text-indigo-400" />
+                  <Info className="w-3.5 h-3.5 text-teal-400" />
                   <span>このシステムについて</span>
                 </button>
                 <button
@@ -121,6 +174,18 @@ export const SlimHeader: React.FC<SlimHeaderProps> = ({
           </div>
         </div>
       </div>
+
+      {/* 運用フェーズ切り替えモーダル */}
+      <PhaseManagementModal
+        isOpen={showPhaseModal}
+        onClose={() => setShowPhaseModal(false)}
+        onPhaseChange={() => {
+          if (typeof window !== 'undefined') {
+            setIsEventMode(StorageService.getCurrentCollectionPhase().mode === 'event');
+            window.location.reload();
+          }
+        }}
+      />
 
       {/* このシステムについてモーダル（共通コンポーネント） */}
       <AboutSystemModal

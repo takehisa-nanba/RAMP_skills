@@ -35,6 +35,8 @@ export const SkillRadarChart: React.FC<SkillRadarChartProps> = ({
 }) => {
   const [selectedAxis, setSelectedAxis] = useState<RubricAxis | null>(null);
 
+  const unratedAxes: string[] = [];
+
   // チャート用データ構築
   const chartData = RUBRIC_AXES.map((axis) => {
     // 最新の合意到達点（evaluatedAt の降順で最新を取得）
@@ -47,12 +49,17 @@ export const SkillRadarChart: React.FC<SkillRadarChartProps> = ({
       .filter((e) => e.skillId === axis.id && e.type === 'self')
       .sort((a, b) => new Date(b.evaluatedAt).getTime() - new Date(a.evaluatedAt).getTime())[0];
 
+    if (!milestone) {
+      unratedAxes.push(axis.name);
+    }
+
     return {
       axisId: axis.id,
       subject: axis.name,
-      '本人と合意した到達点': milestone ? milestone.score : 3,
-      '本人自己評価': selfEval ? selfEval.score : 3,
+      '本人と合意した到達点': milestone ? milestone.score : 0,
+      '本人自己評価': selfEval ? selfEval.score : 0,
       [companyName]: companyTargetScores[axis.id] ?? 3,
+      isUnrated: !milestone,
       fullMark: 5,
     };
   });
@@ -141,6 +148,16 @@ export const SkillRadarChart: React.FC<SkillRadarChartProps> = ({
           </RadarChart>
         </ResponsiveContainer>
       </div>
+
+      {/* 未評価軸の明示的注記 */}
+      {unratedAxes.length > 0 && (
+        <div className="mt-2 p-2 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-800 flex items-center gap-1.5">
+          <Info className="w-3.5 h-3.5 flex-shrink-0 text-amber-600" />
+          <span>
+            <strong>未確認項目あり:</strong> 【{unratedAxes.join('、')}】はまだ合意評価が記録されていません（お試し実習等で確認予定）。
+          </span>
+        </div>
+      )}
 
       {/* ルーブリック詳細モーダル */}
       {selectedAxis && (

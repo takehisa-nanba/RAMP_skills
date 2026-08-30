@@ -13,6 +13,8 @@ export default function Home() {
   const [trainees, setTrainees] = useState<TraineeProfile[]>([]);
   const [requirements, setRequirements] = useState<CompanyWorkRequirement[]>([]);
   const [selectedReqId, setSelectedReqId] = useState<string>('');
+  const [selectedTraineeId, setSelectedTraineeId] = useState<string>('trainee-a');
+  const [companyStep, setCompanyStep] = useState<0 | 1 | 2 | 3 | 4>(0);
   const [offers, setOffers] = useState<Offer[]>([]);
   const [skillRequests, setSkillRequests] = useState<SkillRequest[]>([]);
   const [feedbacks, setFeedbacks] = useState<FeedbackSurvey[]>([]);
@@ -21,20 +23,26 @@ export default function Home() {
 
   // データ初期ロード＆同期関数
   const loadData = () => {
-    setTrainees(StorageService.getTrainees());
-    setRequirements(StorageService.getCompanyRequirements());
-    setSelectedReqId(StorageService.getSelectedRequirementId());
+    const loadedTrainees = StorageService.getTrainees();
+    const loadedReqs = StorageService.getCompanyRequirements();
+    const loadedReqId = StorageService.getSelectedRequirementId();
+    setTrainees(loadedTrainees);
+    setRequirements(loadedReqs);
+    setSelectedReqId(loadedReqId);
     setOffers(StorageService.getOffers());
     setSkillRequests(StorageService.getSkillRequests());
     setFeedbacks(StorageService.getFeedbacks());
+
+    if (!selectedTraineeId && loadedTrainees.length > 0) {
+      setSelectedTraineeId(loadedTrainees[0].id);
+    }
   };
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
       const params = new URLSearchParams(window.location.search);
-      // ?reset=true または ?reset=all でシステム全データを初期シード状態へ完全復元
       if (params.get('reset') === 'true' || params.get('reset') === 'all') {
-        StorageService.resetAllToSeed();
+        StorageService.resetDisplayDemoData();
         const newUrl = window.location.pathname;
         window.history.replaceState({}, '', newUrl);
       }
@@ -47,15 +55,34 @@ export default function Home() {
     setIsLoaded(true);
   }, []);
 
+  // 業務要件選択（全視点へ同期）
   const handleSelectRequirement = (id: string) => {
     setSelectedReqId(id);
     StorageService.setSelectedRequirementId(id);
   };
 
-  const handleResetDisplay = () => {
-    // システム側ですべてを初期シードデータへ完全復元
-    StorageService.resetAllToSeed();
+  // 研修生選択（全視点へ同期）
+  const handleSelectTrainee = (id: string) => {
+    setSelectedTraineeId(id);
+  };
+
+  // 視点切替（体験の文脈・同じケースを維持し、初期化は行わない）
+  const handleSelectRole = (newRole: DemoRole) => {
+    setCurrentRole(newRole);
+  };
+
+  // 明示的な初期化（ロゴクリック、表示初期化、次の来場者リセット時のみ実行）
+  const handleResetToStart = () => {
+    StorageService.resetDisplayDemoData();
     loadData();
+    setCompanyStep(0);
+    if (requirements.length > 0) {
+      setSelectedReqId(requirements[0].id);
+      StorageService.setSelectedRequirementId(requirements[0].id);
+    }
+    if (trainees.length > 0) {
+      setSelectedTraineeId(trainees[0].id);
+    }
     setExperienceKey((k) => k + 1);
   };
 
@@ -70,25 +97,27 @@ export default function Home() {
     );
   }
 
+  // 現在選択中の研修生オブジェクト
+  const activeTrainee = trainees.find((t) => t.id === selectedTraineeId) || trainees[0];
+
   return (
-    <div className="min-h-screen flex flex-col justify-between bg-slate-100/60 text-slate-900">
+    <div className="min-h-screen flex flex-col justify-between bg-gradient-to-b from-teal-50/40 via-slate-50 to-cyan-50/30 text-slate-900">
       <div>
-        {/* 1段スリムヘッダー */}
+        {/* 1段スリムヘッダー（視点切替は文脈維持、ロゴクリックで初期化） */}
         <SlimHeader
           currentRole={currentRole}
-          onSelectRole={setCurrentRole}
-          onResetDisplay={handleResetDisplay}
-          onReturnToStart={() => {
-            setCurrentRole('company');
-            setExperienceKey((k) => k + 1);
-          }}
+          selectedTraineeCodeName={activeTrainee?.codeName}
+          onSelectRole={handleSelectRole}
+          onResetDisplay={handleResetToStart}
+          onReturnToStart={handleResetToStart}
         />
 
-        {/* メインビューの動的切替 */}
+        {/* メインビューの動的切替（同一ケースの文脈を保持） */}
         <main className="pb-8">
           {currentRole === 'trainee' && (
             <TraineeView
-              trainee={trainees[0]}
+              trainee={activeTrainee}
+              focusedRequirementId={selectedReqId}
               onDataChange={loadData}
             />
           )}
@@ -96,6 +125,8 @@ export default function Home() {
           {currentRole === 'supporter' && (
             <SupporterView
               trainees={trainees}
+              initialSelectedTraineeId={selectedTraineeId}
+              focusedRequirementId={selectedReqId}
               offers={offers}
               skillRequests={skillRequests}
               feedbacks={feedbacks}
@@ -109,9 +140,13 @@ export default function Home() {
               trainees={trainees}
               requirements={requirements}
               selectedRequirementId={selectedReqId}
+              selectedTraineeId={selectedTraineeId}
+              companyStep={companyStep}
+              onStepChange={setCompanyStep}
               onSelectRequirement={handleSelectRequirement}
+              onSelectTrainee={handleSelectTrainee}
               onDataChange={loadData}
-              onReturnToStart={() => setExperienceKey((k) => k + 1)}
+              onReturnToStart={handleResetToStart}
             />
           )}
         </main>

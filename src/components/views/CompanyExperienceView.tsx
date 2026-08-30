@@ -8,6 +8,10 @@ import {
   TaskCategory,
   EarlyFinishHandling,
   WorkCycleEvidence,
+  DurationMode,
+  TimeAllocationState,
+  FlexibilityState,
+  EarlyFinishState,
 } from '../../types';
 import { WorkCycleChart } from '../charts/WorkCycleChart';
 import { SkillRadarChart } from '../charts/SkillRadarChart';
@@ -126,7 +130,11 @@ interface CompanyExperienceViewProps {
   trainees: TraineeProfile[];
   requirements: CompanyWorkRequirement[];
   selectedRequirementId: string;
+  selectedTraineeId?: string;
+  companyStep?: 0 | 1 | 2 | 3 | 4;
+  onStepChange?: (step: 0 | 1 | 2 | 3 | 4) => void;
   onSelectRequirement: (id: string) => void;
+  onSelectTrainee?: (id: string) => void;
   onDataChange: () => void;
   onReturnToStart?: () => void;
 }
@@ -135,12 +143,27 @@ export const CompanyExperienceView: React.FC<CompanyExperienceViewProps> = ({
   trainees,
   requirements,
   selectedRequirementId,
+  selectedTraineeId,
+  companyStep = 0,
+  onStepChange,
   onSelectRequirement,
+  onSelectTrainee,
   onDataChange,
   onReturnToStart,
 }) => {
   // ステップ管理 (0: 開始, 1: 業務選択, 2: 人財選択, 3: 中核比較, 4: 詳細確認・対話アクション)
-  const [step, setStep] = useState<0 | 1 | 2 | 3 | 4>(0);
+  const [step, setLocalStep] = useState<0 | 1 | 2 | 3 | 4>(companyStep);
+
+  useEffect(() => {
+    if (companyStep !== undefined && companyStep !== step) {
+      setLocalStep(companyStep);
+    }
+  }, [companyStep]);
+
+  const setStep = (newStep: 0 | 1 | 2 | 3 | 4) => {
+    setLocalStep(newStep);
+    onStepChange?.(newStep);
+  };
 
   // アニメーション定数（1行目1.0sフェード、2行目0.45s開始・全文2.5sタイプライター）
   const FADE_DURATION_MS = 1000;
@@ -259,8 +282,28 @@ export const CompanyExperienceView: React.FC<CompanyExperienceViewProps> = ({
     }
   };
 
-  // 選択中の研修生
-  const [activeTrainee, setActiveTrainee] = useState<TraineeProfile>(trainees[0]);
+  // 選択中の研修生（親の selectedTraineeId と同期し、視点切替時も同一ケースを維持）
+  const [activeTrainee, setLocalActiveTrainee] = useState<TraineeProfile>(() => {
+    if (selectedTraineeId) {
+      const found = trainees.find((t) => t.id === selectedTraineeId);
+      if (found) return found;
+    }
+    return trainees[0];
+  });
+
+  useEffect(() => {
+    if (selectedTraineeId) {
+      const found = trainees.find((t) => t.id === selectedTraineeId);
+      if (found && found.id !== activeTrainee.id) {
+        setLocalActiveTrainee(found);
+      }
+    }
+  }, [selectedTraineeId, trainees]);
+
+  const setActiveTrainee = (t: TraineeProfile) => {
+    setLocalActiveTrainee(t);
+    onSelectTrainee?.(t.id);
+  };
 
   // モーダル管理
   const [showOfferModal, setShowOfferModal] = useState(false);
@@ -310,9 +353,25 @@ export const CompanyExperienceView: React.FC<CompanyExperienceViewProps> = ({
   ]);
   const [newReqCustomNotes, setNewReqCustomNotes] = useState('');
 
+  // デモシナリオの一時プレビュー用（カルテへの自動書き込みは行わない）
+  const [previewSimulatedEvidence, setPreviewSimulatedEvidence] = useState<WorkCycleEvidence | null>(null);
+  const sessionId = useRef(`session-${Date.now()}`).current;
+  const responseRevision = useRef(0);
+
   const [toastInfo, setToastInfo] = useState<{ message: string; autoReturn?: boolean } | null>(null);
   const returnTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const normalToastTimerRef = useRef<NodeJS.Timeout | null>(null);
 
+  // 画面遷移を行わない通常のトースト通知
+  const showToast = (msg: string) => {
+    if (normalToastTimerRef.current) clearTimeout(normalToastTimerRef.current);
+    setToastInfo({ message: msg, autoReturn: false });
+    normalToastTimerRef.current = setTimeout(() => {
+      setToastInfo(null);
+    }, 3500);
+  };
+
+  // 来場者交代用の自動復帰トースト
   const showToastWithAutoReturn = (msg: string) => {
     if (returnTimerRef.current) clearTimeout(returnTimerRef.current);
     setToastInfo({ message: msg, autoReturn: true });
@@ -332,26 +391,75 @@ export const CompanyExperienceView: React.FC<CompanyExperienceViewProps> = ({
     if (onReturnToStart) onReturnToStart();
   };
 
+  // 【この条件で比較する】押下時の回答スナップショット記録（revision管理）
+  const recordRequirementResponse = (req: CompanyWorkRequirement) => {
+    responseRevision.current += 1;
+    StorageService.addRequirementResponse({
+      id: `resp-${Date.now()}-${responseRevision.current}`,
+      sessionId,
+      revision: responseRevision.current,
+      requirementId: req.id,
+      taskDefinitionId: req.taskDefinitionId,
+      taskName: req.taskName,
+      taskCategory: req.taskCategory || 'general',
+      durationMode: req.durationMode || 'minutes',
+      expectedDurationMinutes: req.expectedDurationMinutes,
+      maxDurationMinutes: req.acceptableDurationRange?.max ?? null,
+      outputQuantity: req.outputQuantity ?? null,
+      outputUnit: req.outputUnitOnly || req.workUnit,
+      timeFlexibility: req.timeFlexibilityState || 'unknown',
+      outputFlexibility: req.outputFlexibilityState || 'unknown',
+      timeAllocation: req.timeAllocationState || 'unknown',
+      earlyFinishPolicy: req.earlyFinishState || 'unknown',
+      availableSupports: req.availableSupports || [],
+      priorityConditions: req.priorityConditions || [],
+      configuredDetails: req.configuredDetails ?? false,
+      submittedAt: new Date().toISOString(),
+      schemaVersion: 'v2',
+    });
+  };
+
   const connectionAnalysis: ConnectionAnalysis = analyzeConnection(
     activeRequirement,
     activeTrainee
   );
 
-  // 業務カテゴリ（taskCategory）に基づく型安全な実績取得関数（フォールバックは絶対に行わない）
+  // 安定ID (taskDefinitionId / requirementId) および 成果単位・数量に基づく厳密な照合
+  // ※ カテゴリ一致だけの matches[0] フォールバックは行わない
   const getRelevantWorkCycle = (
     t: TraineeProfile,
     req: CompanyWorkRequirement
   ): WorkCycleEvidence | undefined => {
-    if (!req.taskCategory) return undefined;
-    const matches = t.workCycles.filter((wc) => wc.taskCategory === req.taskCategory);
-    if (matches.length === 0) return undefined;
-    const directMatch = matches.find(
-      (wc) =>
-        req.taskName.includes(wc.taskName.slice(0, 4)) ||
-        wc.taskName.includes(req.taskName.slice(0, 4)) ||
-        req.workUnit === wc.workUnit
-    );
-    return directMatch || matches[0];
+    // 一時プレビューがあればそれを最優先
+    if (previewSimulatedEvidence && previewSimulatedEvidence.traineeId === t.id) {
+      return previewSimulatedEvidence;
+    }
+
+    // 1. 生ログからの動的集計を優先
+    const liveEvidence = StorageService.calculateWorkCycleEvidence(t.id, {
+      taskDefinitionId: req.taskDefinitionId,
+      requirementId: req.id,
+      outputUnit: req.outputUnitOnly || req.workUnit,
+      outputQuantity: req.outputQuantity || 1,
+    });
+    if (liveEvidence) return liveEvidence;
+
+    // 2. プリセット/シード業務の厳密照合
+    const directMatch = t.workCycles.find((wc) => {
+      if (req.taskDefinitionId && wc.taskDefinitionId) {
+        const isUnitMatch =
+          (req.outputUnitOnly && wc.outputUnit && req.outputUnitOnly === wc.outputUnit) ||
+          req.workUnit === wc.workUnit;
+        const isQtyMatch = !req.outputQuantity || !wc.outputQuantity || req.outputQuantity === wc.outputQuantity;
+        return req.taskDefinitionId === wc.taskDefinitionId && isUnitMatch && isQtyMatch;
+      }
+      if (req.id && wc.requirementId) {
+        return req.id === wc.requirementId;
+      }
+      return false;
+    });
+
+    return directMatch;
   };
 
   const relevantWorkCycle = getRelevantWorkCycle(activeTrainee, activeRequirement);
@@ -417,6 +525,48 @@ export const CompanyExperienceView: React.FC<CompanyExperienceViewProps> = ({
         ? newReqCustomTaskName.trim()
         : newReqPresetTask;
 
+    const isDurationMinutes =
+      newReqDurationPreset !== 'まだ決まっていない' &&
+      newReqDurationPreset !== '半日以内' &&
+      newReqDurationPreset !== '1日以内' &&
+      newReqDurationPreset !== '期限まで任せる';
+
+    const durMode: DurationMode =
+      newReqDurationPreset === 'まだ決まっていない'
+        ? 'unknown'
+        : newReqDurationPreset === '半日以内'
+        ? 'half_day'
+        : newReqDurationPreset === '1日以内'
+        ? 'one_day'
+        : newReqDurationPreset === '期限まで任せる'
+        ? 'deadline_based'
+        : 'minutes';
+
+    const timeAllocState: TimeAllocationState = showDetailAccordion
+      ? newReqTimeAllocation.includes('任せられる')
+        ? 'delegated'
+        : newReqTimeAllocation.includes('調整可能')
+        ? 'negotiable'
+        : 'fixed_break_only'
+      : 'unknown';
+
+    const earlyState: EarlyFinishState = showDetailAccordion
+      ? newReqEarlyHandlingChoice.includes('回復')
+        ? 'recovery'
+        : newReqEarlyHandlingChoice.includes('次')
+        ? 'prepare_next'
+        : newReqEarlyHandlingChoice.includes('待機')
+        ? 'standby'
+        : 'consult'
+      : 'unknown';
+
+    const flexState: FlexibilityState = showDetailAccordion ? 'margin_small' : 'unknown';
+
+    // 成果数量と単位の抽出 (例: "10件" -> qty: 10, unit: "件")
+    const qtyMatch = newReqUnitChoice.match(/^(\d+)/);
+    const outputQty = qtyMatch ? parseInt(qtyMatch[1], 10) : 1;
+    const unitOnly = newReqUnitChoice.replace(/^(\d+)/, '').trim() || '単位';
+
     const newReq: CompanyWorkRequirement = {
       id: `custom-req-${Date.now()}`,
       companyName: offerCompany || '御社（登録業務）',
@@ -424,19 +574,26 @@ export const CompanyExperienceView: React.FC<CompanyExperienceViewProps> = ({
       taskCategory: newReqCategory,
       taskDescription: `御社登録の業務要件: ${finalTaskName}`,
       workUnit: newReqUnitChoice,
-      expectedDurationMinutes: newReqExpectedMinutes,
+      outputQuantity: outputQty,
+      outputUnitOnly: unitOnly,
+      durationMode: durMode,
+      expectedDurationMinutes: isDurationMinutes ? newReqExpectedMinutes : null,
       acceptableDurationRange: {
-        min: Math.max(10, Math.round(newReqExpectedMinutes * 0.7)),
-        max: newReqMaxMinutes,
+        min: isDurationMinutes ? Math.max(10, Math.round(newReqExpectedMinutes * 0.7)) : null,
+        max: isDurationMinutes ? newReqMaxMinutes : null,
       },
       expectedOutput: `${newReqUnitChoice}の完了`,
       requiredQuality: newReqQualityChoice,
       acceptableVariation: showDetailAccordion ? newReqOutputFlexibility : '未確認（事前相談事項）',
-      evaluationPeriod: 'day',
+      evaluationPeriod: isDurationMinutes ? 'day' : 'deadline',
       priority: 'quality',
-      recoveryTimeAllowed: showDetailAccordion ? newReqTimeAllocation.includes('任せられる') || newReqTimeAllocation.includes('調整可能') : true,
+      recoveryTimeAllowed: timeAllocState === 'delegated' || timeAllocState === 'negotiable',
       flexibleWorkSequence: true,
       flexibleTimeOfDay: true,
+      timeAllocationState: timeAllocState,
+      timeFlexibilityState: flexState,
+      outputFlexibilityState: flexState,
+      earlyFinishState: earlyState,
       earlyFinishHandling: newReqEarlyHandlingChoice.includes('回復')
         ? 'recovery'
         : newReqEarlyHandlingChoice.includes('次')
@@ -466,6 +623,7 @@ export const CompanyExperienceView: React.FC<CompanyExperienceViewProps> = ({
 
     const allReqs = [newReq, ...requirements];
     StorageService.saveCompanyRequirements(allReqs);
+    recordRequirementResponse(newReq);
     onSelectRequirement(newReq.id);
     setReqPage(0);
     setShowNewReqModal(false);
@@ -478,14 +636,14 @@ export const CompanyExperienceView: React.FC<CompanyExperienceViewProps> = ({
       <div>
         {/* トースト（自動復帰案内付き） */}
         {toastInfo && (
-          <div className="mb-3 bg-purple-900 text-white px-5 py-3 rounded-2xl shadow-2xl text-base font-bold animate-fadeIn flex items-center justify-between border-2 border-purple-400">
+          <div className="mb-3 bg-teal-950 text-white px-5 py-3 rounded-2xl shadow-2xl text-base font-bold animate-fadeIn flex items-center justify-between border-2 border-teal-500">
             <span className="flex items-center gap-2">
               <span>{toastInfo.message}</span>
             </span>
             {toastInfo.autoReturn && (
               <button
                 onClick={handleImmediateReturn}
-                className="ml-4 px-4 py-1.5 bg-white text-purple-950 rounded-xl text-sm font-black hover:bg-purple-100 transition whitespace-nowrap shadow"
+                className="ml-4 px-4 py-1.5 bg-white text-teal-950 rounded-xl text-sm font-black hover:bg-teal-100 transition whitespace-nowrap shadow"
               >
                 今すぐメイン画面へ戻る ➔
               </button>
@@ -500,7 +658,7 @@ export const CompanyExperienceView: React.FC<CompanyExperienceViewProps> = ({
               <button
                 onClick={() => setStep(1)}
                 className={`font-bold transition whitespace-nowrap ${
-                  step === 1 ? 'text-purple-700 underline underline-offset-4' : 'hover:text-slate-900'
+                  step === 1 ? 'text-teal-700 underline underline-offset-4' : 'hover:text-slate-900'
                 }`}
               >
                 1. 仕事を選ぶ
@@ -509,7 +667,7 @@ export const CompanyExperienceView: React.FC<CompanyExperienceViewProps> = ({
               <button
                 onClick={() => setStep(2)}
                 className={`font-bold transition whitespace-nowrap ${
-                  step === 2 ? 'text-purple-700 underline underline-offset-4' : 'hover:text-slate-900'
+                  step === 2 ? 'text-teal-700 underline underline-offset-4' : 'hover:text-slate-900'
                 }`}
               >
                 2. 人を見る
@@ -518,7 +676,7 @@ export const CompanyExperienceView: React.FC<CompanyExperienceViewProps> = ({
               <button
                 onClick={() => setStep(3)}
                 className={`font-bold transition whitespace-nowrap ${
-                  step === 3 ? 'text-purple-700 underline underline-offset-4' : 'hover:text-slate-900'
+                  step === 3 ? 'text-teal-700 underline underline-offset-4' : 'hover:text-slate-900'
                 }`}
               >
                 3. 働き方を比べる
@@ -527,7 +685,7 @@ export const CompanyExperienceView: React.FC<CompanyExperienceViewProps> = ({
               <button
                 onClick={() => setStep(4)}
                 className={`font-bold transition whitespace-nowrap ${
-                  step === 4 ? 'text-purple-700 underline underline-offset-4' : 'hover:text-slate-900'
+                  step === 4 ? 'text-teal-700 underline underline-offset-4' : 'hover:text-slate-900'
                 }`}
               >
                 4. 詳しく確認・対話へ
@@ -549,7 +707,7 @@ export const CompanyExperienceView: React.FC<CompanyExperienceViewProps> = ({
             className="py-10 sm:py-20 text-center space-y-8 max-w-5xl mx-auto animate-fadeIn cursor-pointer select-none"
             title="クリックでアニメーションをスキップ"
           >
-            <div className="inline-block px-4 py-1.5 bg-purple-50 text-purple-700 border-2 border-purple-200 rounded-full text-sm font-black tracking-widest uppercase">
+            <div className="inline-block px-4 py-1.5 bg-teal-50 text-teal-700 border-2 border-teal-200 rounded-full text-sm font-black tracking-widest uppercase shadow-xs">
               体験型デモ
             </div>
 
@@ -562,10 +720,10 @@ export const CompanyExperienceView: React.FC<CompanyExperienceViewProps> = ({
               >
                 {fullText1}
               </span>
-              <span className="text-purple-700 min-h-[1.3em]">
+              <span className="text-teal-600 min-h-[1.3em]">
                 {fullText2.slice(0, typedChars2)}
                 {!isTypingDone && typedChars2 > 0 && (
-                  <span className="inline-block w-1.5 h-10 sm:h-12 bg-purple-700 animate-pulse ml-1 align-middle"></span>
+                  <span className="inline-block w-1.5 h-10 sm:h-12 bg-teal-600 animate-pulse ml-1 align-middle"></span>
                 )}
               </span>
             </h1>
@@ -588,17 +746,27 @@ export const CompanyExperienceView: React.FC<CompanyExperienceViewProps> = ({
                     e.stopPropagation();
                     setStep(1);
                   }}
-                  className="w-full sm:w-auto px-10 py-5 bg-purple-700 hover:bg-purple-800 text-white font-black text-xl rounded-2xl shadow-xl hover:shadow-2xl transition flex items-center justify-center gap-3 group"
+                  className="w-full sm:w-auto px-8 py-4 sm:py-5 bg-gradient-to-r from-teal-600 to-cyan-600 hover:from-teal-700 hover:to-cyan-700 text-white font-bold text-lg sm:text-xl rounded-2xl shadow-xl hover:shadow-2xl shadow-teal-500/20 transition flex items-center justify-center gap-3 group cursor-pointer"
                 >
                   <span>御社の仕事を選んで試す</span>
-                  <ArrowRight className="w-6 h-6 group-hover:translate-x-1 transition-transform" />
+                  <ArrowRight className="w-5 h-5 sm:w-6 sm:h-6 group-hover:translate-x-1 transition-transform" />
+                </button>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setShowNewReqModal(true);
+                  }}
+                  className="w-full sm:w-auto px-7 py-4 sm:py-5 bg-white hover:bg-teal-50 text-teal-800 border-2 border-teal-500 hover:border-teal-600 font-bold text-base sm:text-lg rounded-2xl shadow-md hover:shadow-lg transition flex items-center justify-center gap-2.5 group cursor-pointer"
+                >
+                  <PlusCircle className="w-5 h-5 text-teal-600 group-hover:rotate-90 transition-transform" />
+                  <span>＋ 自社の仕事を直接登録</span>
                 </button>
                 <button
                   onClick={(e) => {
                     e.stopPropagation();
                     setShowAboutModal(true);
                   }}
-                  className="w-full sm:w-auto px-6 py-4 text-slate-700 hover:text-slate-900 font-bold text-lg transition"
+                  className="w-full sm:w-auto px-5 py-3.5 text-slate-600 hover:text-slate-900 font-bold text-base transition cursor-pointer"
                 >
                   このシステムについて
                 </button>
@@ -613,18 +781,46 @@ export const CompanyExperienceView: React.FC<CompanyExperienceViewProps> = ({
         {step === 1 && (
           <div className="space-y-3 animate-fadeIn">
             <div>
-              <span className="text-sm font-black text-purple-700 tracking-wider">
+              <span className="text-sm font-bold text-teal-700 tracking-wider">
                 STEP 1
               </span>
-              <h2 className="text-2xl sm:text-3xl font-extrabold text-slate-900 mt-0.5">
+              <h2 className="text-2xl sm:text-3xl font-bold text-slate-900 mt-0.5">
                 御社では、どのような仕事を任せたいですか？
               </h2>
-              <p className="text-sm sm:text-base text-slate-600 mt-0.5 font-medium">
-                比較したい仕事をお選びください。選択後に条件を確認・調整できます。
+              <p className="text-sm sm:text-base text-slate-600 mt-0.5 font-normal">
+                用意された仕事から選ぶか、自社の仕事を新しく登録して比較できます。
               </p>
             </div>
 
-            {/* リスト操作ヘッダー（左右切替 ＆ 新規追加ボタン） */}
+            {/* 🌟 圧倒的に目立つ自社業務登録ハイライトバナーカード */}
+            <div className="bg-gradient-to-r from-teal-600 via-teal-700 to-cyan-700 rounded-2xl p-4 sm:p-5 text-white shadow-xl shadow-teal-700/20 flex flex-wrap sm:flex-nowrap items-center justify-between gap-4 border-2 border-teal-400">
+              <div className="space-y-1.5">
+                <div className="flex items-center gap-2">
+                  <span className="bg-amber-400 text-slate-950 text-[11px] font-bold px-2.5 py-0.5 rounded-full shadow-xs">
+                    ★ おすすめ
+                  </span>
+                  <h3 className="text-lg sm:text-xl font-bold tracking-tight text-white flex items-center gap-2">
+                    <PlusCircle className="w-5 h-5 text-teal-200" />
+                    <span>御社の実際の仕事を入力して比較してみませんか？</span>
+                  </h3>
+                </div>
+                <p className="text-xs sm:text-sm text-teal-50 font-normal leading-relaxed">
+                  選択式で3〜5回ポチポチ選ぶだけ。自社の仕事と研修生の持続可能な作業リズムをその場ですぐ比較できます。
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setShowNewReqModal(true)}
+                className="w-full sm:w-auto px-6 py-3.5 bg-white hover:bg-teal-50 text-teal-950 font-bold text-sm sm:text-base rounded-xl shadow-lg hover:shadow-xl transition flex items-center justify-center gap-2 flex-shrink-0 cursor-pointer border-2 border-white hover:border-teal-200"
+              >
+                <PlusCircle className="w-5 h-5 text-teal-700" />
+                <span>＋ 自社の仕事を新しく登録する</span>
+                <ArrowRight className="w-4 h-4 text-teal-700" />
+              </button>
+            </div>
+
+            {/* リスト操作ヘッダー（件数表示 ＆ ページ切り替え） */}
             <div className="flex flex-wrap items-center justify-between gap-2 bg-white py-1.5 px-3 rounded-xl border border-slate-200 shadow-sm">
               <div className="flex items-center gap-2">
                 <span className="text-xs sm:text-sm font-bold text-slate-700">
@@ -635,46 +831,35 @@ export const CompanyExperienceView: React.FC<CompanyExperienceViewProps> = ({
                 </span>
               </div>
 
-              <div className="flex items-center gap-2">
-                {/* 自社業務の新規追加ボタン */}
+              {/* 左右切り替えボタン（全仕事の入れ替え） */}
+              <div className="flex items-center border border-slate-200 rounded-lg overflow-hidden shadow-sm bg-white">
                 <button
-                  onClick={() => setShowNewReqModal(true)}
-                  className="px-2.5 py-1 bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-200 rounded-lg text-xs font-bold inline-flex items-center gap-1 transition"
+                  onClick={() => setReqPage((p) => Math.max(0, p - 1))}
+                  disabled={reqPage === 0}
+                  className={`px-2.5 py-1 text-xs font-bold flex items-center gap-1 transition ${
+                    reqPage === 0
+                      ? 'text-slate-300 bg-slate-50 cursor-not-allowed'
+                      : 'text-slate-700 hover:bg-slate-100 active:bg-slate-200'
+                  }`}
+                  title="前の5件を表示"
                 >
-                  <PlusCircle className="w-3 h-3" />
-                  <span>＋ 自社の仕事を新しく入力する</span>
+                  <ChevronLeft className="w-3.5 h-3.5" />
+                  <span>前へ</span>
                 </button>
-
-                {/* 左右切り替えボタン（全仕事の入れ替え） */}
-                <div className="flex items-center border border-slate-200 rounded-lg overflow-hidden shadow-sm bg-white">
-                  <button
-                    onClick={() => setReqPage((p) => Math.max(0, p - 1))}
-                    disabled={reqPage === 0}
-                    className={`px-2.5 py-1 text-xs font-bold flex items-center gap-1 transition ${
-                      reqPage === 0
-                        ? 'text-slate-300 bg-slate-50 cursor-not-allowed'
-                        : 'text-slate-700 hover:bg-slate-100 active:bg-slate-200'
-                    }`}
-                    title="前の5件を表示"
-                  >
-                    <ChevronLeft className="w-3.5 h-3.5" />
-                    <span>前へ</span>
-                  </button>
-                  <div className="w-px h-4 bg-slate-200"></div>
-                  <button
-                    onClick={() => setReqPage((p) => Math.min(totalReqPages - 1, p + 1))}
-                    disabled={reqPage >= totalReqPages - 1}
-                    className={`px-2.5 py-1 text-xs font-bold flex items-center gap-1 transition ${
-                      reqPage >= totalReqPages - 1
-                        ? 'text-slate-300 bg-slate-50 cursor-not-allowed'
-                        : 'text-slate-700 hover:bg-slate-100 active:bg-slate-200'
-                    }`}
-                    title="次の5件を表示"
-                  >
-                    <span>次へ</span>
-                    <ChevronRight className="w-3.5 h-3.5" />
-                  </button>
-                </div>
+                <div className="w-px h-4 bg-slate-200"></div>
+                <button
+                  onClick={() => setReqPage((p) => Math.min(totalReqPages - 1, p + 1))}
+                  disabled={reqPage >= totalReqPages - 1}
+                  className={`px-2.5 py-1 text-xs font-bold flex items-center gap-1 transition ${
+                    reqPage >= totalReqPages - 1
+                      ? 'text-slate-300 bg-slate-50 cursor-not-allowed'
+                      : 'text-slate-700 hover:bg-slate-100 active:bg-slate-200'
+                  }`}
+                  title="次の5件を表示"
+                >
+                  <span>次へ</span>
+                  <ChevronRight className="w-3.5 h-3.5" />
+                </button>
               </div>
             </div>
 
@@ -690,7 +875,7 @@ export const CompanyExperienceView: React.FC<CompanyExperienceViewProps> = ({
                     onClick={() => onSelectRequirement(req.id)}
                     className={`py-1.5 px-3 sm:py-2 sm:px-3.5 rounded-xl border transition cursor-pointer flex flex-wrap sm:flex-nowrap items-center justify-between gap-2 ${
                       isSelected
-                        ? 'bg-purple-50/70 border-purple-600 shadow-sm ring-2 ring-purple-200'
+                        ? 'bg-teal-50/70 border-teal-600 shadow-sm ring-2 ring-teal-200'
                         : 'bg-white border-slate-200 hover:border-slate-300 hover:shadow-xs'
                     }`}
                   >
@@ -700,7 +885,7 @@ export const CompanyExperienceView: React.FC<CompanyExperienceViewProps> = ({
                       <div
                         className={`w-5 h-5 rounded-full border-2 flex items-center justify-center flex-shrink-0 transition ${
                           isSelected
-                            ? 'border-purple-600 bg-purple-600 text-white shadow-sm'
+                            ? 'border-teal-600 bg-teal-600 text-white shadow-sm'
                             : 'border-slate-300 bg-white'
                         }`}
                       >
@@ -721,7 +906,7 @@ export const CompanyExperienceView: React.FC<CompanyExperienceViewProps> = ({
                               : '一般定常'}
                           </span>
                           {isCustom && (
-                            <span className="text-[11px] font-black px-1.5 py-0.5 rounded bg-purple-100 text-purple-800 border border-purple-200">
+                            <span className="text-[11px] font-black px-1.5 py-0.5 rounded bg-cyan-100 text-cyan-900 border border-cyan-300">
                               自社登録
                             </span>
                           )}
@@ -743,7 +928,7 @@ export const CompanyExperienceView: React.FC<CompanyExperienceViewProps> = ({
                         </span>
                       </div>
                       <div className="text-right">
-                        <span className="inline-block bg-purple-100 border border-purple-200 text-purple-900 text-xs font-black px-2 py-0.5 rounded-md">
+                        <span className="inline-block bg-teal-100 border border-teal-200 text-teal-900 text-xs font-black px-2 py-0.5 rounded-md">
                           単位: {req.workUnit}
                         </span>
                       </div>
@@ -792,8 +977,12 @@ export const CompanyExperienceView: React.FC<CompanyExperienceViewProps> = ({
                   <span>デモ開始へ戻る</span>
                 </button>
                 <button
-                  onClick={() => setStep(2)}
-                  className="px-6 py-2.5 bg-purple-700 hover:bg-purple-800 text-white font-black text-sm sm:text-base rounded-xl shadow-md hover:shadow-lg transition flex items-center gap-2"
+                  onClick={() => {
+                    recordRequirementResponse(activeRequirement);
+                    setPreviewSimulatedEvidence(null);
+                    setStep(2);
+                  }}
+                  className="px-6 py-2.5 bg-gradient-to-r from-teal-600 to-cyan-600 hover:from-teal-700 hover:to-cyan-700 text-white font-black text-sm sm:text-base rounded-xl shadow-md hover:shadow-lg shadow-teal-500/20 transition flex items-center gap-2"
                 >
                   <span>この仕事で人財を見る</span>
                   <ArrowRight className="w-4 h-4" />
@@ -809,7 +998,7 @@ export const CompanyExperienceView: React.FC<CompanyExperienceViewProps> = ({
         {step === 2 && (
           <div className="space-y-6 animate-fadeIn">
             <div>
-              <span className="text-base font-black text-purple-700 tracking-wider">
+              <span className="text-base font-black text-teal-700 tracking-wider">
                 STEP 2
               </span>
               <h2 className="text-3xl sm:text-4xl font-extrabold text-slate-900 mt-1">
@@ -818,6 +1007,33 @@ export const CompanyExperienceView: React.FC<CompanyExperienceViewProps> = ({
               <p className="text-lg text-slate-600 mt-1.5 font-medium">
                 異なる働き方や特性を持つ研修生からお選びください。（架空のモデルケース・デモ用想定値）
               </p>
+            </div>
+
+            {/* 選択中の業務バー ＆ 自社業務追加ボタン */}
+            <div className="bg-white border-2 border-teal-200 rounded-2xl p-4 flex flex-wrap items-center justify-between gap-3 shadow-xs">
+              <div className="flex items-center gap-2.5 text-xs sm:text-sm">
+                <span className="text-slate-500 font-bold">比較中の業務:</span>
+                <span className="font-bold text-slate-900 bg-teal-50 text-teal-950 px-3 py-1.5 rounded-xl border border-teal-300">
+                  {activeRequirement.taskName}（想定{activeRequirement.expectedDurationMinutes}分 / {activeRequirement.workUnit}）
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowNewReqModal(true)}
+                  className="px-4 py-2 bg-gradient-to-r from-teal-600 to-cyan-600 hover:from-teal-700 hover:to-cyan-700 text-white font-bold rounded-xl text-xs flex items-center gap-1.5 shadow-sm transition cursor-pointer"
+                >
+                  <PlusCircle className="w-4 h-4" />
+                  <span>＋ 自社の仕事を新しく登録する</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setStep(1)}
+                  className="px-3.5 py-2 text-slate-600 hover:bg-slate-100 rounded-xl text-xs font-bold border border-slate-200 transition"
+                >
+                  業務を選び直す
+                </button>
+              </div>
             </div>
 
             {/* 研修生カード一覧（客観的な模擬実績の有無を表示） */}
@@ -829,7 +1045,7 @@ export const CompanyExperienceView: React.FC<CompanyExperienceViewProps> = ({
                 return (
                   <div
                     key={t.id}
-                    className="bg-white border-2 border-slate-200 hover:border-purple-400 rounded-2xl p-6 shadow-sm hover:shadow-md transition flex flex-col justify-between space-y-4 relative"
+                    className="bg-white border-2 border-slate-200 hover:border-teal-400 rounded-2xl p-6 shadow-sm hover:shadow-md transition flex flex-col justify-between space-y-4 relative"
                   >
                     {/* 客観的な実績有無バッジ（推薦・おすすめ・合否判定を完全排除） */}
                     {hasEvidence ? (
@@ -845,7 +1061,7 @@ export const CompanyExperienceView: React.FC<CompanyExperienceViewProps> = ({
                     <div className="space-y-3">
                       <div className="flex items-center gap-3.5">
                         <div
-                          className="w-12 h-12 rounded-2xl bg-purple-700 text-white font-black flex items-center justify-center text-xl shadow-sm"
+                          className="w-12 h-12 rounded-2xl bg-gradient-to-br from-teal-500 to-teal-700 text-white font-black flex items-center justify-center text-xl shadow-sm"
                         >
                           {t.codeName.slice(0, 1)}
                         </div>
@@ -861,14 +1077,14 @@ export const CompanyExperienceView: React.FC<CompanyExperienceViewProps> = ({
                       </div>
 
                       {wc ? (
-                        <div className="text-base p-3.5 rounded-xl space-y-1 bg-purple-50/70 border-2 border-purple-200 text-slate-900">
-                          <span className="text-sm font-black text-purple-700 uppercase tracking-wide block">
+                        <div className="text-base p-3.5 rounded-xl space-y-1 bg-teal-50/70 border-2 border-teal-200 text-slate-900">
+                          <span className="text-sm font-black text-teal-700 uppercase tracking-wide block">
                             観測された作業・回復実績:
                           </span>
                           <div className="font-black text-lg text-slate-900">
                             {wc.taskName} ({wc.workUnit})
                           </div>
-                          <div className="text-base font-bold text-purple-900">
+                          <div className="text-base font-bold text-teal-950">
                             集中{wc.workDurationMinutes}分 ＋ 回復{wc.recoveryDurationMinutes}分（{wc.qualityResult}）
                           </div>
                         </div>
@@ -890,7 +1106,7 @@ export const CompanyExperienceView: React.FC<CompanyExperienceViewProps> = ({
                         setOfferDesiredWork(activeRequirement.taskName);
                         setStep(3);
                       }}
-                      className="w-full py-4 bg-purple-700 hover:bg-purple-800 text-white font-black text-lg rounded-xl shadow transition flex items-center justify-center gap-2 group"
+                      className="w-full py-4 bg-gradient-to-r from-teal-600 to-cyan-600 hover:from-teal-700 hover:to-cyan-700 text-white font-black text-lg rounded-xl shadow-md shadow-teal-500/20 transition flex items-center justify-center gap-2 group"
                     >
                       <span>{t.codeName} との働き方を比較する</span>
                       <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
@@ -920,48 +1136,88 @@ export const CompanyExperienceView: React.FC<CompanyExperienceViewProps> = ({
         {step === 3 && (
           <div className="space-y-2.5 animate-fadeIn">
             {/* 💡 デモ体験: 三者循環シミュレーション（企業 ➔ 利用者実践 ➔ 支援員補足 ➔ カルテ反映） */}
-            <div className="bg-gradient-to-r from-purple-50 via-indigo-50 to-blue-50 border-2 border-purple-200 rounded-xl p-2.5 sm:p-3 flex flex-wrap items-center justify-between gap-2 shadow-xs">
+            <div className="bg-gradient-to-r from-teal-50/80 via-cyan-50/40 to-white border-2 border-teal-200 rounded-xl p-2.5 sm:p-3 flex flex-wrap items-center justify-between gap-2 shadow-xs">
               <div className="flex items-center gap-2.5 min-w-0 flex-1">
-                <div className="w-7 h-7 rounded-lg bg-purple-700 text-white font-black flex items-center justify-center text-sm flex-shrink-0">
+                <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-teal-500 to-teal-700 text-white font-black flex items-center justify-center text-sm flex-shrink-0 shadow-xs">
                   <Sparkles className="w-3.5 h-3.5" />
                 </div>
                 <div className="min-w-0">
                   <div className="flex items-center gap-2">
-                    <span className="text-xs font-black text-purple-900">
+                    <span className="text-xs font-black text-teal-950">
                       三者循環デモ: この業務を{activeTrainee.codeName}がやってみたら？
                     </span>
-                    <span className="text-[10px] font-bold bg-purple-100 text-purple-800 px-1.5 py-0.5 rounded">
+                    <span className="text-[10px] font-bold bg-teal-100 text-teal-800 px-1.5 py-0.5 rounded">
                       実践 ➔ 支援員見立て ➔ カルテ反映
                     </span>
                   </div>
                   <p className="text-[11px] text-slate-600 truncate">
                     {relevantWorkCycle
                       ? `観測実績（作業${relevantWorkCycle.workDurationMinutes}分＋回復${relevantWorkCycle.recoveryDurationMinutes}分）と支援員見立てがカルテに反映・接続されています。`
-                      : `未観測です。ボタンを押すと、本人の実践記録と支援員見立てをカルテに反映し一致度を確かめられます。`}
+                      : `未観測です。デモ体験用に一時プレビューを表示して比較イメージを確かめられます。`}
                   </p>
                 </div>
               </div>
 
               <div className="flex items-center gap-2 flex-shrink-0">
-                <button
-                  type="button"
-                  onClick={() => {
-                    StorageService.quickSimulatePracticeAndApply(
-                      activeTrainee.id,
-                      activeRequirement,
-                      activeTrainee.id === 'trainee-e' ? 50 : 20,
-                      activeTrainee.id === 'trainee-e' ? 3 : 10
-                    );
-                    onDataChange();
-                    showToastWithAutoReturn(
-                      `✅ ${activeTrainee.codeName}の実践記録と支援員見立てをカルテに反映しました！タイムラインが更新されました`
-                    );
-                  }}
-                  className="px-3 py-1.5 bg-purple-700 hover:bg-purple-800 text-white text-xs font-black rounded-lg shadow-sm hover:shadow transition flex items-center gap-1.5"
-                >
-                  <Sparkles className="w-3 h-3" />
-                  <span>実践と見立てをカルテに反映</span>
-                </button>
+                {previewSimulatedEvidence ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setPreviewSimulatedEvidence(null);
+                      showToast('プレビュー表示を解除しました。');
+                    }}
+                    className="px-3 py-1.5 bg-slate-700 hover:bg-slate-800 text-white text-xs font-black rounded-lg shadow-sm hover:shadow transition flex items-center gap-1.5"
+                  >
+                    <span>✕ プレビューを解除</span>
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const repWork = activeTrainee.id === 'trainee-e' ? 50 : 20;
+                      const repRecovery = activeTrainee.id === 'trainee-e' ? 3 : 10;
+                      setPreviewSimulatedEvidence({
+                        id: `preview-${Date.now()}`,
+                        traineeId: activeTrainee.id,
+                        taskName: activeRequirement.taskName,
+                        taskCategory: activeRequirement.taskCategory,
+                        workUnit: activeRequirement.workUnit,
+                        outputQuantity: activeRequirement.outputQuantity || 1,
+                        outputUnit: activeRequirement.outputUnitOnly || activeRequirement.workUnit,
+                        workDurationMinutes: repWork,
+                        recoveryDurationMinutes: repRecovery,
+                        medianWorkDurationMinutes: repWork,
+                        medianRecoveryDurationMinutes: repRecovery,
+                        completedOutput: `${activeRequirement.workUnit} 完了`,
+                        qualityResult: '想定品質99.5%（プレビュー）',
+                        observedRepeatRange: {
+                          minCycles: 2,
+                          maxCycles: 3,
+                          observedWindowMinutes: (repWork + repRecovery) * 2.5,
+                        },
+                        observedRange: {
+                          minDurationMinutes: Math.round(repWork * 0.9),
+                          maxDurationMinutes: Math.round(repWork * 1.1),
+                          isRangeCalculated: true,
+                        },
+                        stabilizingConditions: ['手順書の事前確認', '手元タイマー使用'],
+                        selfCopingUsed: ['水分補給と深呼吸'],
+                        supportUsed: ['開始時5分の仕様確認'],
+                        observedAt: new Date().toISOString().slice(0, 10),
+                        evidenceNote: '※架空の想定データによる一時プレビューです（観測記録・カルテには保存されません）。',
+                        dataOrigin: 'demo_seed',
+                        isDemoSample: true,
+                      });
+                      showToast(
+                        `💡 デモシナリオを一時プレビュー表示しました（※観測記録・カルテには保存されません）`
+                      );
+                    }}
+                    className="px-3 py-1.5 bg-gradient-to-r from-teal-600 to-cyan-600 hover:from-teal-700 hover:to-cyan-700 text-white text-xs font-black rounded-lg shadow-sm hover:shadow transition flex items-center gap-1.5"
+                  >
+                    <Sparkles className="w-3 h-3" />
+                    <span>デモシナリオをプレビュー</span>
+                  </button>
+                )}
               </div>
             </div>
 
@@ -1033,9 +1289,9 @@ export const CompanyExperienceView: React.FC<CompanyExperienceViewProps> = ({
 
               <button
                 onClick={() => setStep(4)}
-                className="px-8 py-2.5 bg-purple-700 hover:bg-purple-800 text-white font-black text-base sm:text-lg rounded-xl shadow-lg hover:shadow-xl transition flex items-center gap-2.5"
+                className="px-8 py-2.5 bg-gradient-to-r from-teal-600 to-cyan-600 hover:from-teal-700 hover:to-cyan-700 text-white font-black text-base sm:text-lg rounded-xl shadow-lg hover:shadow-xl shadow-teal-500/25 transition flex items-center gap-2.5"
               >
-                <span>この接続を詳しく見る（トリセツ・配慮・対話へ）</span>
+                <span>この方の詳細へ</span>
                 <ArrowRight className="w-5 h-5" />
               </button>
             </div>
@@ -1126,20 +1382,20 @@ export const CompanyExperienceView: React.FC<CompanyExperienceViewProps> = ({
             {/* 3. 企業向け公開サマリー（強み・成長過程・今後の目標） */}
             <div className="bg-white border-2 border-slate-200 rounded-2xl p-6 shadow-sm space-y-4">
               <h4 className="text-2xl font-black text-slate-900 flex items-center gap-2">
-                <Sparkles className="w-6 h-6 text-purple-600" />
+                <Sparkles className="w-6 h-6 text-teal-600" />
                 <span>企業向け公開サマリー（本人同意済み）</span>
               </h4>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div className="bg-purple-50/60 p-4 rounded-xl border border-purple-200 space-y-1.5">
-                  <span className="text-xs font-black text-purple-800 uppercase tracking-wide block">
+                <div className="bg-teal-50/60 p-4 rounded-xl border border-teal-200 space-y-1.5">
+                  <span className="text-xs font-black text-teal-800 uppercase tracking-wide block">
                     🌟 本人の強み（得意なこと）
                   </span>
                   <p className="text-slate-800 text-base font-medium leading-relaxed">
                     {activeTrainee.publicSummary.strengths}
                   </p>
                 </div>
-                <div className="bg-indigo-50/60 p-4 rounded-xl border border-indigo-200 space-y-1.5">
-                  <span className="text-xs font-black text-indigo-800 uppercase tracking-wide block">
+                <div className="bg-cyan-50/60 p-4 rounded-xl border border-cyan-200 space-y-1.5">
+                  <span className="text-xs font-black text-cyan-800 uppercase tracking-wide block">
                     📈 これまでの成長過程（訓練の成果）
                   </span>
                   <p className="text-slate-800 text-base font-medium leading-relaxed">
@@ -1158,7 +1414,7 @@ export const CompanyExperienceView: React.FC<CompanyExperienceViewProps> = ({
             </div>
 
             {/* 4. 対話アクションセクション */}
-            <div className="bg-gradient-to-br from-purple-50 via-indigo-50/40 to-slate-50 border-2 border-purple-300 rounded-3xl p-8 shadow-sm text-center space-y-5">
+            <div className="bg-gradient-to-br from-teal-50/80 via-cyan-50/40 to-slate-50 border-2 border-teal-300 rounded-3xl p-8 shadow-sm text-center space-y-5">
               <h3 className="text-3xl font-black text-slate-900">
                 この条件で、もう少し話してみますか？
               </h3>
@@ -1175,7 +1431,7 @@ export const CompanyExperienceView: React.FC<CompanyExperienceViewProps> = ({
                     setOfferDesiredWork(activeRequirement.taskName);
                     setShowOfferModal(true);
                   }}
-                  className="px-8 py-[18px] bg-purple-700 hover:bg-purple-800 text-white font-black text-xl rounded-2xl shadow-lg hover:shadow-xl transition flex items-center gap-2.5"
+                  className="px-8 py-[18px] bg-gradient-to-r from-teal-600 to-cyan-600 hover:from-teal-700 hover:to-cyan-700 text-white font-black text-xl rounded-2xl shadow-lg hover:shadow-xl shadow-teal-500/20 transition flex items-center gap-2.5"
                 >
                   <Building2 className="w-5 h-5" />
                   <span>1〜3日のお試し実習を相談する</span>
@@ -1188,22 +1444,22 @@ export const CompanyExperienceView: React.FC<CompanyExperienceViewProps> = ({
                   }}
                   className="px-8 py-[18px] bg-white hover:bg-slate-50 text-slate-900 font-black text-xl rounded-2xl border-2 border-slate-300 shadow transition flex items-center gap-2.5"
                 >
-                  <Send className="w-5 h-5 text-purple-700" />
+                  <Send className="w-5 h-5 text-teal-700" />
                   <span>すり合わせ面談を申し込む</span>
                 </button>
               </div>
 
-              <div className="pt-6 border-t border-purple-200 flex flex-wrap items-center justify-center gap-6 text-base text-slate-600 font-bold">
+              <div className="pt-6 border-t border-teal-200 flex flex-wrap items-center justify-center gap-6 text-base text-slate-600 font-bold">
                 <button
                   onClick={() => setStep(3)}
-                  className="hover:text-purple-700 transition"
+                  className="hover:text-teal-700 transition"
                 >
                   ← 比較画面に戻る
                 </button>
                 <span>・</span>
                 <button
                   onClick={() => setStep(2)}
-                  className="hover:text-purple-700 transition"
+                  className="hover:text-teal-700 transition"
                 >
                   ← 別の人を見る
                 </button>
@@ -1273,10 +1529,10 @@ export const CompanyExperienceView: React.FC<CompanyExperienceViewProps> = ({
                   <button
                     type="button"
                     onClick={() => setOfferType('trial')}
-                    className={`py-2 text-center rounded-xl border-2 font-bold text-base ${
+                    className={`py-2 text-center rounded-xl border-2 font-bold text-base transition ${
                       offerType === 'trial'
-                        ? 'bg-purple-50 border-purple-700 text-purple-800'
-                        : 'border-slate-300 text-slate-700'
+                        ? 'bg-teal-50 border-teal-600 text-teal-950 font-black shadow-xs ring-2 ring-teal-200'
+                        : 'border-slate-300 text-slate-700 hover:bg-slate-50'
                     }`}
                   >
                     お試し実習（1〜3日）
@@ -1284,10 +1540,10 @@ export const CompanyExperienceView: React.FC<CompanyExperienceViewProps> = ({
                   <button
                     type="button"
                     onClick={() => setOfferType('interview')}
-                    className={`py-2 text-center rounded-xl border-2 font-bold text-base ${
+                    className={`py-2 text-center rounded-xl border-2 font-bold text-base transition ${
                       offerType === 'interview'
-                        ? 'bg-purple-50 border-purple-700 text-purple-800'
-                        : 'border-slate-300 text-slate-700'
+                        ? 'bg-teal-50 border-teal-600 text-teal-950 font-black shadow-xs ring-2 ring-teal-200'
+                        : 'border-slate-300 text-slate-700 hover:bg-slate-50'
                     }`}
                   >
                     すり合わせ面談
@@ -1361,7 +1617,7 @@ export const CompanyExperienceView: React.FC<CompanyExperienceViewProps> = ({
                 </button>
                 <button
                   type="submit"
-                  className="px-6 py-2.5 bg-purple-700 hover:bg-purple-800 text-white font-black rounded-xl text-base shadow"
+                  className="px-6 py-2.5 bg-gradient-to-r from-teal-600 to-cyan-600 hover:from-teal-700 hover:to-cyan-700 text-white font-black rounded-xl text-base shadow-md shadow-teal-500/20"
                 >
                   送信する
                 </button>
@@ -1397,7 +1653,7 @@ export const CompanyExperienceView: React.FC<CompanyExperienceViewProps> = ({
                       onClick={() => setSurveyScore(score)}
                       className={`flex-1 py-2 text-center rounded-xl border-2 font-black text-lg ${
                         surveyScore === score
-                          ? 'bg-purple-700 text-white border-purple-700'
+                          ? 'bg-teal-600 text-white border-teal-600'
                           : 'border-slate-300 text-slate-700 hover:bg-slate-50'
                       }`}
                     >
@@ -1428,7 +1684,7 @@ export const CompanyExperienceView: React.FC<CompanyExperienceViewProps> = ({
                 </button>
                 <button
                   type="submit"
-                  className="px-6 py-2.5 bg-purple-700 hover:bg-purple-800 text-white font-black rounded-xl text-base shadow"
+                  className="px-6 py-2.5 bg-gradient-to-r from-teal-600 to-cyan-600 hover:from-teal-700 hover:to-cyan-700 text-white font-black rounded-xl text-base shadow-md shadow-teal-500/20"
                 >
                   感想を送信
                 </button>
@@ -1486,7 +1742,7 @@ export const CompanyExperienceView: React.FC<CompanyExperienceViewProps> = ({
                 </button>
                 <button
                   type="submit"
-                  className="px-6 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-black rounded-xl text-base shadow"
+                  className="px-6 py-2.5 bg-gradient-to-r from-teal-600 to-cyan-600 hover:from-teal-700 hover:to-cyan-700 text-white font-black rounded-xl text-base shadow-md shadow-teal-500/20"
                 >
                   リクエストを投稿
                 </button>
@@ -1519,8 +1775,8 @@ export const CompanyExperienceView: React.FC<CompanyExperienceViewProps> = ({
               {/* STEP A: まず試すための基本条件（選択式） */}
               {/* ============================================================ */}
               <div className="space-y-4">
-                <div className="flex items-center gap-2 pb-1 border-b border-purple-200">
-                  <span className="bg-purple-700 text-white font-black px-2 py-0.5 rounded text-xs">
+                <div className="flex items-center gap-2 pb-1 border-b border-teal-200">
+                  <span className="bg-teal-700 text-white font-black px-2 py-0.5 rounded text-xs">
                     STEP A
                   </span>
                   <span className="font-black text-slate-800 text-sm">
@@ -1546,7 +1802,7 @@ export const CompanyExperienceView: React.FC<CompanyExperienceViewProps> = ({
                         }}
                         className={`py-2 px-3 rounded-xl border-2 font-bold text-xs sm:text-sm transition text-left ${
                           newReqCategory === cat
-                            ? 'bg-purple-50 border-purple-700 text-purple-900 shadow-xs ring-1 ring-purple-300'
+                            ? 'bg-teal-50 border-teal-600 text-teal-950 shadow-xs ring-2 ring-teal-200'
                             : 'border-slate-200 text-slate-700 hover:bg-slate-50'
                         }`}
                       >
@@ -1569,13 +1825,13 @@ export const CompanyExperienceView: React.FC<CompanyExperienceViewProps> = ({
                         onClick={() => setNewReqPresetTask(task)}
                         className={`w-full py-2 px-3.5 rounded-xl border-2 font-bold text-xs sm:text-sm transition text-left flex items-center justify-between ${
                           newReqPresetTask === task
-                            ? 'bg-purple-50 border-purple-700 text-purple-900 shadow-xs'
+                            ? 'bg-teal-50 border-teal-600 text-teal-950 shadow-xs ring-1 ring-teal-200'
                             : 'border-slate-200 text-slate-700 hover:bg-slate-50'
                         }`}
                       >
                         <span>{task}</span>
                         {newReqPresetTask === task && (
-                          <CheckCircle2 className="w-4 h-4 text-purple-700 flex-shrink-0" />
+                          <CheckCircle2 className="w-4 h-4 text-teal-600 flex-shrink-0" />
                         )}
                       </button>
                     ))}
@@ -1600,31 +1856,39 @@ export const CompanyExperienceView: React.FC<CompanyExperienceViewProps> = ({
                     <label className="font-bold text-slate-800 text-sm">
                       3. 想定作業時間（1回または1成果あたり）
                     </label>
-                    <span className="text-xs font-black text-purple-700 bg-purple-50 px-2 py-0.5 rounded-md border border-purple-200">
-                      現在: {newReqExpectedMinutes}分
+                    <span className="text-xs font-black text-teal-800 bg-teal-50 px-2 py-0.5 rounded-md border border-teal-200">
+                      現在:{' '}
+                      {newReqDurationPreset !== 'まだ決まっていない' &&
+                      newReqDurationPreset !== '半日以内' &&
+                      newReqDurationPreset !== '1日以内' &&
+                      newReqDurationPreset !== '期限まで任せる'
+                        ? `${newReqExpectedMinutes}分`
+                        : newReqDurationPreset}
                     </span>
                   </div>
                   <div className="flex flex-wrap gap-1.5 mb-2">
                     {[
-                      { label: '30分以内', min: 30 },
-                      { label: '60分以内', min: 60 },
-                      { label: '90分以内', min: 90 },
-                      { label: '半日以内', min: 180 },
-                      { label: '1日以内', min: 360 },
-                      { label: '期限まで任せる', min: 60 },
-                      { label: 'まだ決まっていない', min: 60 },
+                      { label: '30分以内', min: 30, isMin: true },
+                      { label: '60分以内', min: 60, isMin: true },
+                      { label: '90分以内', min: 90, isMin: true },
+                      { label: '半日以内', min: 0, isMin: false },
+                      { label: '1日以内', min: 0, isMin: false },
+                      { label: '期限まで任せる', min: 0, isMin: false },
+                      { label: 'まだ決まっていない', min: 0, isMin: false },
                     ].map((item) => (
                       <button
                         type="button"
                         key={item.label}
                         onClick={() => {
                           setNewReqDurationPreset(item.label);
-                          setNewReqExpectedMinutes(item.min);
-                          setNewReqMaxMinutes(Math.round(item.min * 1.3));
+                          if (item.isMin) {
+                            setNewReqExpectedMinutes(item.min);
+                            setNewReqMaxMinutes(Math.round(item.min * 1.3));
+                          }
                         }}
                         className={`px-3 py-1.5 rounded-lg border text-xs font-bold transition ${
                           newReqDurationPreset === item.label
-                            ? 'bg-purple-700 text-white border-purple-700'
+                            ? 'bg-teal-600 text-white border-teal-600 shadow-sm font-black'
                             : 'border-slate-200 text-slate-700 hover:bg-slate-100'
                         }`}
                       >
@@ -1633,36 +1897,47 @@ export const CompanyExperienceView: React.FC<CompanyExperienceViewProps> = ({
                     ))}
                   </div>
 
-                  {/* ステッパーによる微調整 */}
-                  <div className="flex items-center gap-3 bg-slate-50 p-2 rounded-xl border border-slate-200">
-                    <span className="text-xs font-bold text-slate-600">時間の微調整:</span>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const val = Math.max(10, newReqExpectedMinutes - 10);
-                        setNewReqExpectedMinutes(val);
-                        setNewReqMaxMinutes(Math.round(val * 1.3));
-                      }}
-                      className="w-7 h-7 bg-white border border-slate-300 rounded-lg font-black text-slate-700 hover:bg-slate-100 flex items-center justify-center text-base"
-                    >
-                      −
-                    </button>
-                    <span className="font-black text-slate-900 text-sm w-12 text-center">
-                      {newReqExpectedMinutes}分
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const val = newReqExpectedMinutes + 10;
-                        setNewReqExpectedMinutes(val);
-                        setNewReqMaxMinutes(Math.round(val * 1.3));
-                      }}
-                      className="w-7 h-7 bg-white border border-slate-300 rounded-lg font-black text-slate-700 hover:bg-slate-100 flex items-center justify-center text-base"
-                    >
-                      ＋
-                    </button>
-                    <span className="text-xs text-slate-500">（許容上限: 約{newReqMaxMinutes}分）</span>
-                  </div>
+                  {/* ステッパーによる微調整（分数指定時のみ有効） */}
+                  {newReqDurationPreset !== 'まだ決まっていない' &&
+                  newReqDurationPreset !== '半日以内' &&
+                  newReqDurationPreset !== '1日以内' &&
+                  newReqDurationPreset !== '期限まで任せる' ? (
+                    <div className="flex items-center gap-3 bg-slate-50 p-2 rounded-xl border border-slate-200">
+                      <span className="text-xs font-bold text-slate-600">時間の微調整:</span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const val = Math.max(10, newReqExpectedMinutes - 10);
+                          setNewReqExpectedMinutes(val);
+                          setNewReqMaxMinutes(Math.round(val * 1.3));
+                        }}
+                        className="w-7 h-7 bg-white border border-slate-300 rounded-lg font-black text-slate-700 hover:bg-slate-100 flex items-center justify-center text-base"
+                      >
+                        −
+                      </button>
+                      <span className="font-black text-slate-900 text-sm w-12 text-center">
+                        {newReqExpectedMinutes}分
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const val = Math.min(180, newReqExpectedMinutes + 10);
+                          setNewReqExpectedMinutes(val);
+                          setNewReqMaxMinutes(Math.round(val * 1.3));
+                        }}
+                        className="w-7 h-7 bg-white border border-slate-300 rounded-lg font-black text-slate-700 hover:bg-slate-100 flex items-center justify-center text-base"
+                      >
+                        ＋
+                      </button>
+                      <span className="text-xs text-slate-500 ml-auto font-medium">
+                        許容最長: 約{newReqMaxMinutes}分
+                      </span>
+                    </div>
+                  ) : (
+                    <div className="bg-amber-50 border border-amber-200 rounded-xl p-2 text-xs font-semibold text-amber-800">
+                      ※分数指定ではないため、余白の自動計算は行わず、お試し実習時の相談事項として取り扱われます。
+                    </div>
+                  )}
                 </div>
 
                 {/* 4. 期待成果量（カテゴリ連動チップ） */}
@@ -1671,7 +1946,7 @@ export const CompanyExperienceView: React.FC<CompanyExperienceViewProps> = ({
                     <label className="font-bold text-slate-800 text-sm">
                       4. 期待成果量（単位）
                     </label>
-                    <span className="text-xs font-black text-purple-700 bg-purple-50 px-2 py-0.5 rounded-md border border-purple-200">
+                    <span className="text-xs font-black text-teal-800 bg-teal-50 px-2 py-0.5 rounded-md border border-teal-200">
                       選択: {newReqUnitChoice}
                     </span>
                   </div>
@@ -1683,7 +1958,7 @@ export const CompanyExperienceView: React.FC<CompanyExperienceViewProps> = ({
                         onClick={() => setNewReqUnitChoice(unit)}
                         className={`px-3 py-1.5 rounded-lg border text-xs font-bold transition ${
                           newReqUnitChoice === unit
-                            ? 'bg-purple-700 text-white border-purple-700'
+                            ? 'bg-teal-600 text-white border-teal-600 shadow-sm font-black'
                             : 'border-slate-200 text-slate-700 hover:bg-slate-100'
                         }`}
                       >
@@ -1730,7 +2005,7 @@ export const CompanyExperienceView: React.FC<CompanyExperienceViewProps> = ({
                           }}
                           className={`px-2.5 py-1 rounded-lg border text-xs font-bold transition ${
                             isSelected
-                              ? 'bg-indigo-600 text-white border-indigo-600'
+                              ? 'bg-teal-600 text-white border-teal-600 shadow-sm'
                               : 'border-slate-200 text-slate-700 hover:bg-slate-100'
                           }`}
                         >
@@ -1754,7 +2029,7 @@ export const CompanyExperienceView: React.FC<CompanyExperienceViewProps> = ({
                           onClick={() => setNewReqQualityChoice(q)}
                           className={`px-2.5 py-1 rounded-lg border text-xs font-semibold transition ${
                             newReqQualityChoice === q
-                              ? 'bg-purple-100 border-purple-600 text-purple-900 font-bold'
+                              ? 'bg-teal-600 text-white border-teal-600 shadow-sm font-bold'
                               : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
                           }`}
                         >
@@ -1783,7 +2058,7 @@ export const CompanyExperienceView: React.FC<CompanyExperienceViewProps> = ({
                       働き方・許容条件を詳しく設定する（任意・開いた場合のみ反映）
                     </span>
                   </div>
-                  <span className="text-xs font-bold text-purple-700">
+                  <span className="text-xs font-bold text-teal-700">
                     {showDetailAccordion ? '▲ 閉じる' : '▼ 詳しく設定する'}
                   </span>
                 </button>
@@ -1815,7 +2090,7 @@ export const CompanyExperienceView: React.FC<CompanyExperienceViewProps> = ({
                             onClick={() => setNewReqTimeFlexibility(choice)}
                             className={`px-2.5 py-1 rounded-lg border text-xs font-bold transition ${
                               newReqTimeFlexibility === choice
-                                ? 'bg-purple-700 text-white border-purple-700'
+                                ? 'bg-teal-600 text-white border-teal-600 shadow-sm'
                                 : 'border-slate-200 text-slate-700 hover:bg-slate-50'
                             }`}
                           >
@@ -1846,7 +2121,7 @@ export const CompanyExperienceView: React.FC<CompanyExperienceViewProps> = ({
                             onClick={() => setNewReqOutputFlexibility(choice)}
                             className={`px-2.5 py-1 rounded-lg border text-xs font-bold transition ${
                               newReqOutputFlexibility === choice
-                                ? 'bg-purple-700 text-white border-purple-700'
+                                ? 'bg-teal-600 text-white border-teal-600 shadow-sm'
                                 : 'border-slate-200 text-slate-700 hover:bg-slate-50'
                             }`}
                           >
@@ -1875,7 +2150,7 @@ export const CompanyExperienceView: React.FC<CompanyExperienceViewProps> = ({
                             onClick={() => setNewReqTimeAllocation(choice)}
                             className={`px-2.5 py-1 rounded-lg border text-xs font-bold transition ${
                               newReqTimeAllocation === choice
-                                ? 'bg-purple-700 text-white border-purple-700'
+                                ? 'bg-teal-600 text-white border-teal-600 shadow-sm'
                                 : 'border-slate-200 text-slate-700 hover:bg-slate-50'
                             }`}
                           >
@@ -1905,7 +2180,7 @@ export const CompanyExperienceView: React.FC<CompanyExperienceViewProps> = ({
                             onClick={() => setNewReqEarlyHandlingChoice(choice)}
                             className={`px-2.5 py-1 rounded-lg border text-xs font-bold transition ${
                               newReqEarlyHandlingChoice === choice
-                                ? 'bg-purple-700 text-white border-purple-700'
+                                ? 'bg-teal-600 text-white border-teal-600 shadow-sm'
                                 : 'border-slate-200 text-slate-700 hover:bg-slate-50'
                             }`}
                           >
@@ -1953,9 +2228,9 @@ export const CompanyExperienceView: React.FC<CompanyExperienceViewProps> = ({
                                   }
                                 }
                               }}
-                              className={`px-2.5 py-1 rounded-lg border text-xs font-semibold transition ${
+                              className={`px-2.5 py-1 rounded-lg border text-xs font-bold transition ${
                                 isSelected
-                                  ? 'bg-emerald-600 text-white border-emerald-600 font-bold'
+                                  ? 'bg-teal-600 text-white border-teal-600 shadow-sm'
                                   : 'border-slate-200 text-slate-700 hover:bg-slate-50'
                               }`}
                             >
@@ -1995,7 +2270,7 @@ export const CompanyExperienceView: React.FC<CompanyExperienceViewProps> = ({
                 </button>
                 <button
                   type="submit"
-                  className="px-6 py-2.5 bg-purple-700 hover:bg-purple-800 text-white font-black text-sm sm:text-base rounded-xl shadow hover:shadow-md transition flex items-center gap-2"
+                  className="px-6 py-2.5 bg-gradient-to-r from-teal-600 to-cyan-600 hover:from-teal-700 hover:to-cyan-700 text-white font-black text-sm sm:text-base rounded-xl shadow-md hover:shadow-lg shadow-teal-500/20 transition flex items-center gap-2"
                 >
                   <span>この条件で登録して比較する</span>
                   <ArrowRight className="w-4 h-4" />

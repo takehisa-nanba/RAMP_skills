@@ -150,6 +150,7 @@ export const CompanyView: React.FC<CompanyViewProps> = ({
       taskName: newReqTaskName || '自社業務（カスタム）',
       taskDescription: newReqDesc || '自社の具体的な業務要件',
       workUnit: newReqUnit,
+      durationMode: 'minutes',
       expectedDurationMinutes: newReqExpectedMinutes,
       acceptableDurationRange: {
         min: Math.round(newReqExpectedMinutes * 0.7),
