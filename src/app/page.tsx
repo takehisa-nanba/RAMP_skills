@@ -30,6 +30,19 @@ export default function Home() {
   };
 
   useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      // ?reset=true または ?reset=all でシステム全データを初期シード状態へ完全復元
+      if (params.get('reset') === 'true' || params.get('reset') === 'all') {
+        StorageService.resetAllToSeed();
+        const newUrl = window.location.pathname;
+        window.history.replaceState({}, '', newUrl);
+      }
+      const roleParam = params.get('role');
+      if (roleParam && ['company', 'trainee', 'supporter'].includes(roleParam)) {
+        setCurrentRole(roleParam as DemoRole);
+      }
+    }
     loadData();
     setIsLoaded(true);
   }, []);
@@ -40,7 +53,8 @@ export default function Home() {
   };
 
   const handleResetDisplay = () => {
-    StorageService.resetDisplayDemoData();
+    // システム側ですべてを初期シードデータへ完全復元
+    StorageService.resetAllToSeed();
     loadData();
     setExperienceKey((k) => k + 1);
   };
@@ -64,6 +78,10 @@ export default function Home() {
           currentRole={currentRole}
           onSelectRole={setCurrentRole}
           onResetDisplay={handleResetDisplay}
+          onReturnToStart={() => {
+            setCurrentRole('company');
+            setExperienceKey((k) => k + 1);
+          }}
         />
 
         {/* メインビューの動的切替 */}
@@ -103,7 +121,7 @@ export default function Home() {
       <footer className="bg-slate-900 text-slate-400 py-4 border-t border-slate-800 text-[11px]">
         <div className="max-w-5xl mx-auto px-4 flex flex-wrap items-center justify-between gap-2">
           <p className="font-semibold text-slate-300">
-            「人を仕事に合わせるのではなく、人と仕事がつながる条件を探す。」
+            「人を仕事に合わせるのではなく、人と仕事がつながる条件で探す。」
           </p>
           <div className="text-slate-500">
             株式会社RAMP | 浜松市ソリューションピッチ（2026/09/01）

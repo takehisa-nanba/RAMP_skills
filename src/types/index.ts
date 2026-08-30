@@ -1,4 +1,4 @@
-﻿export type DemoRole = 'trainee' | 'supporter' | 'company';
+export type DemoRole = 'trainee' | 'supporter' | 'company';
 
 // 6軸のルーブリック定義
 export type RubricLevel = {
@@ -31,14 +31,30 @@ export type EvaluationRecord = {
   targetPeriod?: string;
 };
 
+// 業務カテゴリ（型安全な照合用）
+export type TaskCategory =
+  | 'data_entry'
+  | 'web_banner'
+  | 'manual_creation'
+  | 'document_editing'
+  | 'general';
+
+// 早く終わった場合の余白の扱い
+export type EarlyFinishHandling =
+  | 'consult'    // 事前相談（回復・待機・次業務のどれに使うか合意）
+  | 'recovery'   // 工程内回復・休息として活用
+  | 'standby'    // 待機・次の指示待ち
+  | 'next_task'; // 次の定常業務の準備
+
 // 持続可能な作業周期実績 (デモ用想定値)
 export type WorkCycleEvidence = {
   id: string;
   traineeId: string;
   taskName: string;
+  taskCategory?: TaskCategory;
   workUnit: string;
-  workDurationMinutes: number; // デモ用想定作業時間
-  recoveryDurationMinutes: number; // デモ用想定回復時間
+  workDurationMinutes: number; // デモ用想定作業時間 (代表値)
+  recoveryDurationMinutes: number; // デモ用想定回復時間 (代表値)
   completedOutput: string;
   qualityResult: string;
   observedRepeatRange: {
@@ -110,6 +126,7 @@ export type CompanyWorkRequirement = {
   id: string;
   companyName: string;
   taskName: string;
+  taskCategory?: TaskCategory;
   taskDescription: string;
   workUnit: string;
   expectedDurationMinutes: number;
@@ -125,10 +142,38 @@ export type CompanyWorkRequirement = {
   recoveryTimeAllowed: boolean;
   flexibleWorkSequence: boolean;
   flexibleTimeOfDay: boolean;
+  earlyFinishHandling?: EarlyFinishHandling;
+  priorityConditions?: string[];
+  timeFlexibility?: string;
+  outputFlexibility?: string;
+  timeAllocation?: string;
+  earlyFinishPolicy?: string;
+  configuredDetails?: boolean;
   availableSupports: string[];
+  radarPresets?: Record<string, number>;
   createdAt: string;
   version: number;
   history?: RequirementHistory[];
+};
+
+// 利用者が企業の仕事を実際にやってみた実践記録
+export type TraineePracticeRecord = {
+  id: string;
+  traineeId: string;
+  requirementId: string;
+  taskName: string;
+  taskCategory?: TaskCategory;
+  workUnit: string;
+  workDurationMinutes: number;
+  recoveryDurationMinutes: number;
+  completedOutput: string;
+  qualityResult: string;
+  traineeComment: string; // 本人の振り返り・実感
+  traineeCoping: string[]; // 本人の自己対処
+  supporterNote?: string; // 支援員の補足見立て
+  stabilizingConditions?: string[]; // 支援員が確認した再現条件
+  status: 'practiced' | 'verified'; // 実践済み | 支援員確認・カルテ反映済み
+  recordedAt: string;
 };
 
 // 業務接続分析 (透明なルールに基づく対話用3分類)

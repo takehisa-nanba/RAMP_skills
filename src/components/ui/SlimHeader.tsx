@@ -1,20 +1,22 @@
 import React, { useState } from 'react';
 import { DemoRole } from '../../types';
-import { Building2, Users, Shield, RotateCcw, Info, ChevronDown } from 'lucide-react';
+import { Building2, Users, Shield, RotateCcw, Info } from 'lucide-react';
+import { AboutSystemModal } from '../modals/AboutSystemModal';
 
 interface SlimHeaderProps {
   currentRole: DemoRole;
   onSelectRole: (role: DemoRole) => void;
   onResetDisplay: () => void;
+  onReturnToStart?: () => void;
 }
 
 export const SlimHeader: React.FC<SlimHeaderProps> = ({
   currentRole,
   onSelectRole,
   onResetDisplay,
+  onReturnToStart,
 }) => {
   const [showMenu, setShowMenu] = useState(false);
-  const [showRoleMenu, setShowRoleMenu] = useState(false);
   const [showAboutModal, setShowAboutModal] = useState(false);
   const [showResetConfirm, setShowResetConfirm] = useState(false);
 
@@ -24,16 +26,22 @@ export const SlimHeader: React.FC<SlimHeaderProps> = ({
     supporter: { label: '支援員視点 (佐藤)', icon: Shield, color: 'text-emerald-400 bg-emerald-950/60 border-emerald-800' },
   };
 
-  const CurrentRoleIcon = roleLabels[currentRole].icon;
+  const handleLogoClick = () => {
+    if (onReturnToStart) {
+      onReturnToStart();
+    } else {
+      onResetDisplay();
+    }
+  };
 
   return (
     <header className="sticky top-0 z-40 bg-slate-900 border-b border-slate-800 text-white h-12 flex items-center px-4 shadow-sm select-none">
       <div className="max-w-6xl w-full mx-auto flex items-center justify-between">
-        {/* 左: ロゴ & タイトル (クリックでメイン画面に戻る) */}
+        {/* 左: ロゴ & タイトル (クリックでデモ開始画面に戻るだけ・保存データ不変) */}
         <div
-          onClick={onResetDisplay}
+          onClick={handleLogoClick}
           className="flex items-center gap-2.5 cursor-pointer hover:opacity-90 transition"
-          title="クリックでメイン画面（初期表示）に戻る"
+          title="クリックでデモ開始画面（STEP 0）に戻る（保存データは保持されます）"
         >
           <div className="w-7 h-7 rounded-lg bg-indigo-600 flex items-center justify-center font-black text-white text-sm shadow">
             R
@@ -46,46 +54,32 @@ export const SlimHeader: React.FC<SlimHeaderProps> = ({
           </span>
         </div>
 
-        {/* 右: 視点切替 & デモメニュー */}
-        <div className="flex items-center gap-2">
-          {/* 視点切替コンパクトドロップダウン */}
-          <div className="relative">
-            <button
-              onClick={() => {
-                setShowRoleMenu(!showRoleMenu);
-                setShowMenu(false);
-              }}
-              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold border transition ${roleLabels[currentRole].color}`}
-            >
-              <CurrentRoleIcon className="w-3.5 h-3.5" />
-              <span>{roleLabels[currentRole].label}</span>
-              <ChevronDown className="w-3 h-3 opacity-70" />
-            </button>
-
-            {showRoleMenu && (
-              <div className="absolute right-0 mt-1.5 w-48 bg-slate-800 border border-slate-700 rounded-xl shadow-xl py-1 z-50 animate-fadeIn text-xs">
-                {(['company', 'trainee', 'supporter'] as const).map((r) => {
-                  const Icon = roleLabels[r].icon;
-                  return (
-                    <button
-                      key={r}
-                      onClick={() => {
-                        onSelectRole(r);
-                        setShowRoleMenu(false);
-                      }}
-                      className={`w-full text-left px-3 py-2 flex items-center gap-2 transition ${
-                        currentRole === r
-                          ? 'bg-slate-700 text-white font-bold'
-                          : 'text-slate-300 hover:bg-slate-700/50 hover:text-white'
-                      }`}
-                    >
-                      <Icon className="w-3.5 h-3.5 text-slate-400" />
-                      <span>{roleLabels[r].label}</span>
-                    </button>
-                  );
-                })}
-              </div>
-            )}
+        {/* 右: 視点切替（3つ横並び） & デモメニュー */}
+        <div className="flex items-center gap-2.5">
+          {/* 視点切替 3つ横並びボタングループ */}
+          <div className="flex items-center bg-slate-800/90 p-0.5 rounded-xl border border-slate-700/80">
+            {(['company', 'trainee', 'supporter'] as const).map((r) => {
+              const Icon = roleLabels[r].icon;
+              const isActive = currentRole === r;
+              return (
+                <button
+                  key={r}
+                  onClick={() => onSelectRole(r)}
+                  className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold transition ${
+                    isActive
+                      ? r === 'company'
+                        ? 'bg-purple-700 text-white shadow-sm'
+                        : r === 'trainee'
+                        ? 'bg-blue-600 text-white shadow-sm'
+                        : 'bg-emerald-600 text-white shadow-sm'
+                      : 'text-slate-400 hover:text-slate-200 hover:bg-slate-700/40'
+                  }`}
+                >
+                  <Icon className="w-3.5 h-3.5" />
+                  <span>{roleLabels[r].label}</span>
+                </button>
+              );
+            })}
           </div>
 
           {/* デモメニュー */}
@@ -93,7 +87,6 @@ export const SlimHeader: React.FC<SlimHeaderProps> = ({
             <button
               onClick={() => {
                 setShowMenu(!showMenu);
-                setShowRoleMenu(false);
               }}
               className="p-1.5 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition text-xs"
               title="メニュー"
@@ -129,48 +122,35 @@ export const SlimHeader: React.FC<SlimHeaderProps> = ({
         </div>
       </div>
 
-      {/* このシステムについてモーダル */}
-      {showAboutModal && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 text-slate-900">
-          <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-slate-200 text-xs space-y-3">
-            <h3 className="font-bold text-base text-slate-900 border-b border-slate-200 pb-2">
-              人を仕事に合わせるのではなく、人と仕事がつながる条件を探す
-            </h3>
-            <p className="text-slate-600 leading-relaxed">
-              本システムは、研修生の弱点や能力の不足を一方的に測定するものではありません。
-              本人が安定して力を発揮できる「持続可能な作業周期（集中＋回復）」と、企業の具体的な業務要件の双方を可視化し、接続できる条件を対話するための「働き方の設計図」です。
-            </p>
-            <div className="bg-slate-50 p-3 rounded-xl border border-slate-200 text-[11px] text-slate-500 space-y-1">
-              <div>・浜松市デジタル・スマートシティ ソリューションピッチ登壇プロトタイプ</div>
-              <div>・実在人物の情報は含まず、架空のモデルケースによるデモ用データです</div>
-              <div>・外部通信を行わない完全オフライン設計です</div>
-            </div>
-            <div className="text-right pt-2">
-              <button
-                onClick={() => setShowAboutModal(false)}
-                className="px-4 py-2 bg-slate-900 text-white rounded-lg font-bold"
-              >
-                閉じる
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* このシステムについてモーダル（共通コンポーネント） */}
+      <AboutSystemModal
+        isOpen={showAboutModal}
+        onClose={() => setShowAboutModal(false)}
+      />
 
       {/* リセット確認モーダル */}
       {showResetConfirm && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 text-slate-900">
-          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-200 text-xs space-y-3">
-            <h3 className="font-bold text-sm text-slate-900">表示状態の初期化</h3>
+        <div
+          className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 text-slate-900 animate-fadeIn"
+          onClick={() => setShowResetConfirm(false)}
+        >
+          <div
+            className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl border-2 border-slate-200 text-xs space-y-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="space-y-1">
+              <span className="text-[10px] font-black text-amber-700 bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
+                システム全リセット
+              </span>
+              <h3 className="font-bold text-base text-slate-900">初期シード状態へ完全リセット</h3>
+            </div>
             <p className="text-slate-600 leading-relaxed">
-              業務の選択や表示状態を初期状態に戻します。
-              <br />
-              ※ 来場者が入力したオファーやアンケートデータは保護され、削除されません。
+              登録した自社業務、研修生の実践記録、カルテの更新履歴、届いたオファー等の全データを初期シードデータへ完全復元します。
             </p>
-            <div className="flex justify-end gap-2 pt-2">
+            <div className="flex justify-end gap-2.5 pt-2 border-t border-slate-100">
               <button
                 onClick={() => setShowResetConfirm(false)}
-                className="px-3 py-1.5 text-slate-600 hover:bg-slate-100 rounded-lg"
+                className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-xl font-bold transition"
               >
                 キャンセル
               </button>
@@ -179,7 +159,7 @@ export const SlimHeader: React.FC<SlimHeaderProps> = ({
                   onResetDisplay();
                   setShowResetConfirm(false);
                 }}
-                className="px-4 py-1.5 bg-amber-500 hover:bg-amber-600 text-white font-bold rounded-lg"
+                className="px-5 py-2 bg-amber-600 hover:bg-amber-700 text-white font-black rounded-xl shadow transition"
               >
                 初期状態に戻す
               </button>

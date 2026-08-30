@@ -1,4 +1,4 @@
-﻿import React, { useState } from 'react';
+import React, { useState } from 'react';
 import {
   ResponsiveContainer,
   RadarChart,
@@ -37,12 +37,15 @@ export const SkillRadarChart: React.FC<SkillRadarChartProps> = ({
 
   // チャート用データ構築
   const chartData = RUBRIC_AXES.map((axis) => {
-    // 最新の合意到達点
-    const milestone = evaluations.find(
-      (e) => e.skillId === axis.id && e.type === 'monthly_milestone'
-    );
-    // 最新の本人自己評価
-    const selfEval = evaluations.find((e) => e.skillId === axis.id && e.type === 'self');
+    // 最新の合意到達点（evaluatedAt の降順で最新を取得）
+    const milestone = [...evaluations]
+      .filter((e) => e.skillId === axis.id && e.type === 'monthly_milestone')
+      .sort((a, b) => new Date(b.evaluatedAt).getTime() - new Date(a.evaluatedAt).getTime())[0];
+
+    // 最新の本人自己評価（evaluatedAt の降順で最新を取得）
+    const selfEval = [...evaluations]
+      .filter((e) => e.skillId === axis.id && e.type === 'self')
+      .sort((a, b) => new Date(b.evaluatedAt).getTime() - new Date(a.evaluatedAt).getTime())[0];
 
     return {
       axisId: axis.id,
