@@ -58,20 +58,29 @@ export const CompanyExperienceView: React.FC<CompanyExperienceViewProps> = ({
     if (step === 0) {
       setTypedChars(0);
       setIsTypingDone(false);
-      const timer = setInterval(() => {
-        setTypedChars((prev) => {
-          if (prev >= totalLength) {
-            clearInterval(timer);
-            setIsTypingDone(true);
-            return totalLength;
-          }
-          return prev + 1;
-        });
-      }, 40);
 
-      return () => clearInterval(timer);
+      let current = 0;
+      let timerId: NodeJS.Timeout;
+
+      const typeNext = () => {
+        current += 1;
+        setTypedChars(current);
+
+        if (current >= totalLength) {
+          setIsTypingDone(true);
+          return;
+        }
+
+        // 1行目（fullText1.length）直後は 300ms の行間ポーズ、通常文字は 120ms
+        const delay = current === fullText1.length ? 300 : 120;
+        timerId = setTimeout(typeNext, delay);
+      };
+
+      timerId = setTimeout(typeNext, 120);
+
+      return () => clearTimeout(timerId);
     }
-  }, [step, totalLength]);
+  }, [step, totalLength, fullText1.length]);
 
   const handleSkipTyping = () => {
     setTypedChars(totalLength);
